@@ -44,6 +44,9 @@ EDITOR_MODES = ["write", "split", "preview"]
 # How the home page can sort notes: key -> (label, SQL ORDER BY). The SQL is
 # fixed here, never taken from the user.
 SORTS = {
+    # Dragged notes have a position. New notes have none yet (NULL), and
+    # "position IS NOT NULL" is 0 for them, so they come first, newest on top.
+    "custom": ("Custom order", "notes.position IS NOT NULL, notes.position, notes.updated_at DESC, notes.id DESC"),
     "updated": ("Last edited", "notes.updated_at DESC, notes.id DESC"),
     "created": ("Date created", "notes.created_at DESC, notes.id DESC"),
     "title": ("Title", "notes.title = '', notes.title COLLATE NOCASE, notes.id"),

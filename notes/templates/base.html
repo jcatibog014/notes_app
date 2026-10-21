@@ -40,9 +40,18 @@
         {{ ui.icon('plus') }} New Note <kbd>N</kbd>
       </a>
 
+      {# What dropping a dragged card on each view does (app.js), as a bulk
+         action. Empty = not a drop target from the page you're on. #}
+      {% set drops = {
+        'all': 'unarchive' if current_view == 'archive' else '',
+        'pinned': '' if current_view == 'pinned' else 'pin',
+        'archive': '' if current_view == 'archive' else 'archive',
+        'trash': 'trash',
+      } %}
       {% macro view_link(key, icon_name) -%}
         {% set active = current_view == key and not current_tag and not request.args.get('q') %}
         <a class="side-link{% if active %} active{% endif %}" href="{{ url_for('notes.index', view=None if key == 'all' else key) }}"
+           {% if drops[key] %}data-drop="{{ drops[key] }}"{% endif %}
            {% if active %}aria-current="page"{% endif %}>
           {{ ui.icon(icon_name) }}<span>{{ views[key][0] }}</span>
           {% if view_counts[key] %}<span class="count">{{ view_counts[key] }}</span>{% endif %}
@@ -65,6 +74,7 @@
         <nav class="side-tags" aria-label="Tags">
           {% for tag in sidebar_tags %}
             <a class="side-link{% if current_tag == tag.name %} active{% endif %}" href="{{ url_for('notes.index', tag=tag.name) }}"
+               data-drop="tag:{{ tag.name }}"
                {% if current_tag == tag.name %}aria-current="page"{% endif %}>
               <span class="dot tag-{{ tag_color(tag.name) }}" aria-hidden="true"></span>
               <span class="side-tag-name">{{ tag.name }}</span><span class="count">{{ tag.count }}</span>
@@ -133,6 +143,7 @@
       ('<kbd>Ctrl</kbd> <kbd>K</kbd> or <kbd>/</kbd>', 'Search'),
       ('<kbd>N</kbd> or <kbd>Alt</kbd> <kbd>N</kbd>', 'New note'),
       ('<kbd>↓</kbd> <kbd>↑</kbd> then <kbd>Enter</kbd>', 'Move through notes and open one'),
+      ('<kbd>Alt</kbd> + <kbd>↑</kbd> <kbd>↓</kbd>', 'Move the note with focus up or down'),
       ('<kbd>?</kbd>', 'This list'),
     ]),
     ('Writing', [

@@ -61,9 +61,11 @@ NEW_COLUMNS = {
         "onboarded": "INTEGER NOT NULL DEFAULT 0",
         "show_greeting": "INTEGER NOT NULL DEFAULT 1",
         "editor_mode": "TEXT NOT NULL DEFAULT 'write'",
+        "note_sort": "TEXT NOT NULL DEFAULT 'updated'",
     },
     "notes": {
         "opened_at": "TEXT",
+        "position": "INTEGER",
     },
 }
 
