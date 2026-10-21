@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% import "_macros.html" as ui with context %}
+
+{% block title %}Tags · {% endblock %}
+
+{% block content %}
+<header class="page-head">
+  <div>
+    <p class="eyebrow">Organize</p>
+    <h1>Tags</h1>
+  </div>
+</header>
+
+{% if tags %}
+  <p class="hint">Renaming a tag to one you already have merges the two. Deleting a tag keeps its notes.</p>
+  <ul class="tag-list">
+    {% for tag in tags %}
+      <li class="tag-row card">
+        <a class="tag-row-name" href="{{ url_for('notes.index', tag=tag.name) }}">
+          <span class="dot dot-big tag-{{ tag_color(tag.name) }}" aria-hidden="true"></span>
+          <strong>#{{ tag.name }}</strong>
+          <span class="hint">{{ tag.count }} {{ 'note' if tag.count == 1 else 'notes' }}</span>
+        </a>
+        <form class="tag-rename" method="post" action="{{ url_for('tags.rename', tag_id=tag.id) }}">
+          {{ ui.csrf() }}
+          {% set has_error = error and rename_id == tag.id %}
+          <label class="visually-hidden" for="rename-{{ tag.id }}">New name for #{{ tag.name }}</label>
+          <input id="rename-{{ tag.id }}" name="name" type="text" value="{{ rename_value if has_error else tag.name }}"
+                 autocomplete="off" {% if has_error %}aria-invalid="true" aria-describedby="rename-error"{% endif %}>
+          <button class="btn btn-small" type="submit">Rename</button>
+          {% if has_error %}<p class="error" id="rename-error">{{ error }}</p>{% endif %}
+        </form>
+        <form method="post" action="{{ url_for('tags.delete', tag_id=tag.id) }}"
+              data-confirm="Delete #{{ tag.name }}? Its notes stay, without the tag.">
+          {{ ui.csrf() }}
+          <button class="icon-btn danger" type="submit" title="Delete tag" aria-label="Delete #{{ tag.name }}">{{ ui.icon('trash') }}</button>
+        </form>
+      </li>
+    {% endfor %}
+  </ul>
+{% else %}
+  <div class="empty">
+    {{ ui.flower() }}
+    <h2>No tags yet</h2>
+    <p>Write a <code>#tag</code> anywhere in a note, or add one in the editor's tag box.</p>
+  </div>
+{% endif %}
+{% endblock %}

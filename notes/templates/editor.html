@@ -1,0 +1,197 @@
+{% extends "base.html" %}
+{% import "_macros.html" as ui with context %}
+
+{% block title %}{% if note %}{{ note.title or 'Untitled' }}{% else %}New Note{% endif %} · {% endblock %}
+
+{% set in_trash = note and note.deleted_at %}
+{% set color = form.get('color') or 'default' %}
+
+{% block content %}
+<div class="editor-page note-{{ color }}" id="editor-page">
+  {# The bar sits outside the note's <form>, because forms can't hold other
+     forms (Archive, Trash...). Its pin and color fields join the note's
+     form anyway, through form="note-form". #}
+  <div class="editor-bar">
+    <a class="icon-btn" href="{{ url_for('notes.index') }}" title="Back to notes (Esc)" aria-label="Back to notes" data-back>{{ ui.icon('back') }}</a>
+    <span class="save-status" id="save-status" aria-live="polite">
+      {%- if in_trash %}In the Trash{% elif note %}Edited {{ note.updated_at|ago|lower }}{% else %}New note{% endif -%}
+    </span>
+
+    <div class="bar-actions">
+      <div class="mode-toggle" role="group" aria-label="View">
+        <button type="button" data-mode="write" title="Write">{{ ui.icon('pen', 16) }}<span>Write</span></button>
+        <button type="button" data-mode="split" title="Side by side">{{ ui.icon('columns', 16) }}<span>Split</span></button>
+        <button type="button" data-mode="preview" title="Preview (Ctrl+E)">{{ ui.icon('eye', 16) }}<span>Preview</span></button>
+      </div>
+
+      {% if not in_trash %}
+        <label class="icon-btn toggle-pin" title="Pin">
+          <input class="visually-hidden" type="checkbox" name="pinned" value="1" form="note-form" {% if form.get('pinned') %}checked{% endif %}>
+          {{ ui.icon('pin') }}<span class="visually-hidden">Pinned</span>
+        </label>
+
+        <button class="icon-btn" type="button" popovertarget="color-sheet" title="Color" aria-label="Color">{{ ui.icon('palette') }}</button>
+        <div class="sheet" id="color-sheet" popover>
+          <fieldset class="color-picker">
+            <legend class="sheet-title">Note Color</legend>
+            {% for key, label in note_colors.items() %}
+              <label class="swatch note-{{ key }}" title="{{ label }}">
+                <input class="visually-hidden" type="radio" name="color" value="{{ key }}" form="note-form" {% if color == key %}checked{% endif %}>
+                <span class="swatch-dot" aria-hidden="true"></span>
+                <span class="swatch-label">{{ label }}</span>
+              </label>
+            {% endfor %}
+          </fieldset>
+          {% if errors.color %}<p class="error">{{ errors.color }}</p>{% endif %}
+        </div>
+      {% endif %}
+
+      {% if note %}
+        <button class="icon-btn" type="button" popovertarget="more-sheet" title="More" aria-label="More actions">{{ ui.icon('more') }}</button>
+        <div class="sheet menu" id="more-sheet" popover>
+          <p class="sheet-title">{{ note.title or 'Untitled' }}</p>
+          {% if in_trash %}
+            <form method="post" action="{{ url_for('notes.restore', note_id=note.id) }}">
+              {{ ui.csrf() }}<input type="hidden" name="next" value="editor">
+              <button class="menu-item" type="submit">{{ ui.icon('restore') }} Restore</button>
+            </form>
+            <form method="post" action="{{ url_for('notes.purge', note_id=note.id) }}" data-confirm="Delete this note forever? This can't be undone.">
+              {{ ui.csrf() }}
+              <button class="menu-item danger" type="submit">{{ ui.icon('x') }} Delete Forever</button>
+            </form>
+          {% else %}
+            <form method="post" action="{{ url_for('notes.duplicate', note_id=note.id) }}">
+              {{ ui.csrf() }}
+              <button class="menu-item" type="submit">{{ ui.icon('copy') }} Make a Copy</button>
+            </form>
+            <a class="menu-item" href="{{ url_for('notes.export', note_id=note.id) }}">{{ ui.icon('download') }} Download as Markdown</a>
+            <form method="post" action="{{ url_for('notes.toggle_archive', note_id=note.id) }}">
+              {{ ui.csrf() }}<input type="hidden" name="next" value="editor">
+              <button class="menu-item" type="submit">{{ ui.icon('archive') }} {{ 'Unarchive' if note.archived else 'Archive' }}</button>
+            </form>
+            <form method="post" action="{{ url_for('notes.trash', note_id=note.id) }}">
+              {{ ui.csrf() }}
+              <button class="menu-item danger" type="submit">{{ ui.icon('trash') }} Move to Trash</button>
+            </form>
+          {% endif %}
+        </div>
+      {% endif %}
+
+      {% if not in_trash %}
+        <button class="btn btn-primary btn-small" type="submit" form="note-form">Save</button>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if in_trash %}
+    <div class="banner" role="status">
+      {{ ui.icon('trash') }} This note is in the Trash. Restore it to edit it.
+      <form method="post" action="{{ url_for('notes.restore', note_id=note.id) }}">
+        {{ ui.csrf() }}<input type="hidden" name="next" value="editor">
+        <button class="btn btn-small" type="submit">Restore</button>
+      </form>
+    </div>
+  {% elif note and note.archived %}
+    <div class="banner" role="status">{{ ui.icon('archive') }} This note is archived. It's hidden from your notes, but search still finds it in Archive.</div>
+  {% endif %}
+
+  {% if errors %}
+    <p class="flash flash-error" role="alert">Please fix {{ 'the error' if errors|length == 1 else 'the errors' }} below.</p>
+  {% endif %}
+
+  <form class="sheet-paper" id="note-form" method="post"
+        action="{{ url_for('notes.save', note_id=note.id) if note else url_for('notes.create') }}"
+        data-preview-url="{{ url_for('notes.preview') }}"
+        {% if note %}data-check-url="{{ url_for('notes.check', note_id=note.id) }}"{% endif %}
+        {% if not in_trash %}data-autosave{% endif %}>
+    {{ ui.csrf() }}
+    <fieldset class="plain" {% if in_trash %}disabled{% endif %}>
+      <input class="title-input" id="title" name="title" type="text" value="{{ form.get('title', '') }}"
+             placeholder="Title" aria-label="Title" maxlength="{{ title_max }}" autocomplete="off"
+             {% if not note %}autofocus{% endif %}
+             {% if errors.title %}aria-invalid="true" aria-describedby="title-error"{% endif %}>
+      {% if errors.title %}<p class="error" id="title-error">{{ errors.title }}</p>{% endif %}
+
+      <div class="tags-field{% if errors.tags %} has-error{% endif %}">
+        {{ ui.icon('tag', 16) }}
+        {# app.js turns this box into removable chips. Without JavaScript it's a plain text box. #}
+        <input id="tags" name="tags" type="text" value="{{ form.get('tags', '') }}" list="tag-suggestions"
+               placeholder="Add tags, like work, ideas" aria-label="Tags" autocomplete="off"
+               {% if errors.tags %}aria-invalid="true" aria-describedby="tags-error"{% endif %}>
+        <datalist id="tag-suggestions">{% for name in user_tags %}<option value="{{ name }}">{% endfor %}</datalist>
+      </div>
+      {% if errors.tags %}<p class="error" id="tags-error">{{ errors.tags }}</p>{% endif %}
+
+      <div class="toolbar" role="toolbar" aria-label="Formatting">
+        <button type="button" data-wrap="**" title="Bold (Ctrl+B)" aria-label="Bold"><b>B</b></button>
+        <button type="button" data-wrap="*" title="Italic (Ctrl+I)" aria-label="Italic"><i>I</i></button>
+        <button type="button" data-wrap="~~" title="Strikethrough" aria-label="Strikethrough"><s>S</s></button>
+        <button type="button" data-prefix="## " title="Heading" aria-label="Heading"><b>H</b></button>
+        <span class="toolbar-gap"></span>
+        <button type="button" data-prefix="- " title="Bulleted list" aria-label="Bulleted list">{{ ui.icon('list', 16) }}</button>
+        <button type="button" data-prefix="- [ ] " title="Checklist" aria-label="Checklist">{{ ui.icon('checklist', 16) }}</button>
+        <button type="button" data-prefix="> " title="Quote" aria-label="Quote">{{ ui.icon('quote', 16) }}</button>
+        <button type="button" data-wrap="`" title="Code" aria-label="Code">{{ ui.icon('code', 16) }}</button>
+        <button type="button" data-link title="Link to another note: [[Title]]" aria-label="Link to a note">{{ ui.icon('link', 16) }}</button>
+        <button class="toolbar-help" type="button" popovertarget="markdown-help" title="Formatting help">Aa?</button>
+      </div>
+
+      <div class="panes" id="panes">
+        <div class="pane-write">
+          <textarea id="body" name="body" class="body-input" rows="12"
+                    placeholder="Start writing… Use # for headings, - [ ] for a checklist, #tags and [[Other note]] links."
+                    aria-label="Note text"
+                    {% if errors.body %}aria-invalid="true" aria-describedby="body-error"{% endif %}>{{ form.get('body', '') }}</textarea>
+          {% if errors.body %}<p class="error" id="body-error">{{ errors.body }}</p>{% endif %}
+        </div>
+        <div class="pane-preview prose" id="preview" aria-live="off">
+          {{ preview_html }}
+          {% if not form.get('body') %}<p class="hint">Nothing to preview yet.</p>{% endif %}
+        </div>
+      </div>
+    </fieldset>
+  </form>
+
+  <footer class="editor-foot">
+    <p class="stats">
+      <span id="stat-words">{{ stats.words }} {{ 'word' if stats.words == 1 else 'words' }}</span>
+      <span aria-hidden="true">·</span>
+      <span id="stat-minutes">{{ stats.minutes }} min read</span>
+      <span id="stat-checks" {% if not stats.total %}hidden{% endif %}>
+        <span aria-hidden="true">·</span> {{ stats.done }}/{{ stats.total }} done
+      </span>
+    </p>
+    {% if note %}
+      <p class="hint">Created {{ note.created_at|ago|lower }}</p>
+    {% endif %}
+  </footer>
+
+  {% if backlinks %}
+    <section class="backlinks" aria-labelledby="backlinks-title">
+      <h2 id="backlinks-title">{{ ui.icon('link', 16) }} Linked From</h2>
+      <div class="chips">
+        {% for link in backlinks %}
+          <a class="chip chip-note note-{{ link.color }}" href="{{ url_for('notes.edit', note_id=link.id) }}">{{ link.title or 'Untitled' }}</a>
+        {% endfor %}
+      </div>
+    </section>
+  {% endif %}
+</div>
+
+<div class="sheet" id="markdown-help" popover>
+  <h2 class="sheet-title">Formatting</h2>
+  <dl class="md-help">
+    <div><dt><code># Heading</code></dt><dd>A heading (## and ### are smaller)</dd></div>
+    <div><dt><code>**bold**</code> <code>*italic*</code></dt><dd><b>bold</b>, <i>italic</i></dd></div>
+    <div><dt><code>~~struck~~</code></dt><dd><s>struck</s></dd></div>
+    <div><dt><code>- item</code> <code>1. item</code></dt><dd>Lists</dd></div>
+    <div><dt><code>- [ ] to do</code></dt><dd>A checkbox you can tick</dd></div>
+    <div><dt><code>&gt; quote</code></dt><dd>A quote</dd></div>
+    <div><dt><code>`code`</code> <code>```</code></dt><dd>Code, inline or as a block</dd></div>
+    <div><dt><code>[text](https://…)</code></dt><dd>A web link</dd></div>
+    <div><dt><code>[[Note title]]</code></dt><dd>A link to another note</dd></div>
+    <div><dt><code>#tag</code></dt><dd>Tags the note</dd></div>
+    <div><dt><code>---</code></dt><dd>A dividing line</dd></div>
+  </dl>
+</div>
+{% endblock %}

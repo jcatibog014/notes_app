@@ -1,0 +1,135 @@
+{#
+  Pieces of HTML used on several pages. A macro is like a Python function
+  that returns HTML. Templates load them with:
+      {% import "_macros.html" as ui with context %}
+  "with context" lets the macros use keep, tag_color() and csrf_token().
+#}
+
+{# Line icons (24×24, drawn with strokes). They use currentColor, so they
+   take the color of the text around them. The logo is NOT one of these:
+   it's the fixed image static/logo.png. #}
+{% set ICONS = {
+  'notes': '<path d="M15 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V9z"/><path d="M15 3v6h6"/>',
+  'pin': '<path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"/>',
+  'archive': '<rect x="3" y="4" width="18" height="4" rx="1"/><path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8"/><path d="M10 12h4"/>',
+  'trash': '<path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>',
+  'tag': '<path d="M12.6 2.6A2 2 0 0 0 11.2 2H4a2 2 0 0 0-2 2v7.2a2 2 0 0 0 .6 1.4l8.7 8.7a2.4 2.4 0 0 0 3.4 0l6.6-6.6a2.4 2.4 0 0 0 0-3.4z"/><circle cx="7.5" cy="7.5" r="1.5"/>',
+  'search': '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',
+  'plus': '<path d="M12 5v14M5 12h14"/>',
+  'logout': '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/>',
+  'palette': '<circle cx="12" cy="12" r="9"/><circle cx="8" cy="10" r="1.3"/><circle cx="12" cy="7.5" r="1.3"/><circle cx="16" cy="10" r="1.3"/><path d="M12 21a2.5 2.5 0 0 1 0-5h2a3 3 0 0 0 3-3"/>',
+  'download': '<path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/>',
+  'upload': '<path d="M12 21V9"/><path d="m7 14 5-5 5 5"/><path d="M5 3h14"/>',
+  'copy': '<rect x="8" y="8" width="13" height="13" rx="2"/><path d="M4 16V5a1 1 0 0 1 1-1h11"/>',
+  'restore': '<path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/>',
+  'back': '<path d="M19 12H5"/><path d="m12 19-7-7 7-7"/>',
+  'user': '<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
+  'keyboard': '<rect x="2" y="5" width="20" height="14" rx="2"/><path d="M6 9h.01M10 9h.01M14 9h.01M18 9h.01M7 15h10"/>',
+  'more': '<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>',
+  'x': '<path d="M18 6 6 18M6 6l12 12"/>',
+  'link': '<path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/>',
+  'checklist': '<rect x="3" y="3" width="18" height="18" rx="3"/><path d="m8 12 3 3 5-6"/>',
+  'list': '<path d="M9 6h12M9 12h12M9 18h12"/><circle cx="4" cy="6" r="1"/><circle cx="4" cy="12" r="1"/><circle cx="4" cy="18" r="1"/>',
+  'code': '<path d="m16 18 6-6-6-6"/><path d="m8 6-6 6 6 6"/>',
+  'quote': '<path d="M3 21c3 0 7-1 7-8V5H3v7h4c0 3.5-1.5 5-4 5z"/><path d="M14 21c3 0 7-1 7-8V5h-7v7h4c0 3.5-1.5 5-4 5z"/>',
+  'eye': '<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',
+  'pen': '<path d="M17 3a2.8 2.8 0 0 1 4 4L7.5 20.5 2 22l1.5-5.5z"/>',
+  'columns': '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M12 3v18"/>',
+  'sparkle': '<path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5 18 18M6 18l2.5-2.5M15.5 8.5 18 6"/>',
+} %}
+
+{% macro icon(name, size=18) -%}
+  <svg class="icon" width="{{ size }}" height="{{ size }}" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+       stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">{{ ICONS[name]|safe }}</svg>
+{%- endmacro %}
+
+{% macro csrf() -%}
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+{%- endmacro %}
+
+{# A round profile picture: the user's emoji, or the first letter of their name. #}
+{% macro avatar(user, size='small') -%}
+  <span class="avatar avatar-{{ size }}" aria-hidden="true">
+    {{- user.avatar or (user.display_name or user.username)[0]|upper -}}
+  </span>
+{%- endmacro %}
+
+{# One labelled text box with its error. #}
+{% macro text_field(name, label, value='', errors={}, type='text', hint='', extra='') -%}
+  <div class="field{% if errors[name] %} has-error{% endif %}">
+    <label for="{{ name }}">{{ label }}{% if hint %} <span class="hint">{{ hint }}</span>{% endif %}</label>
+    <input id="{{ name }}" name="{{ name }}" type="{{ type }}" value="{{ value }}" {{ extra|safe }}
+           {% if errors[name] %}aria-invalid="true" aria-describedby="{{ name }}-error"{% endif %}>
+    {% if errors[name] %}<p class="error" id="{{ name }}-error">{{ errors[name] }}</p>{% endif %}
+  </div>
+{%- endmacro %}
+
+{# A small icon button that POSTs a form. #}
+{% macro action(endpoint, note_id, icon_name, label, extra_class='', next=None) -%}
+  <form method="post" action="{{ url_for(endpoint, note_id=note_id, **keep) }}">
+    {{ csrf() }}{% if next %}<input type="hidden" name="next" value="{{ next }}">{% endif %}
+    <button class="icon-btn {{ extra_class }}" type="submit" title="{{ label }}" aria-label="{{ label }}">{{ icon(icon_name) }}</button>
+  </form>
+{%- endmacro %}
+
+{% macro tag_chip(name) -%}
+  <a class="chip tag-{{ tag_color(name) }}" href="{{ url_for('notes.index', tag=name) }}">#{{ name }}</a>
+{%- endmacro %}
+
+{#
+  A note's card in the grid. The whole card is a link to the editor (the
+  .card-link covers it), and the things inside that do something else
+  (checkboxes, tags, links, the buttons) sit on top of it.
+#}
+{% macro note_card(note, view) -%}
+  <article class="note-card note-{{ note.color }}{% if note.cut %} is-cut{% endif %}"
+           data-check-url="{{ url_for('notes.check', note_id=note.id) }}">
+    <a class="card-link" href="{{ url_for('notes.edit', note_id=note.id) }}">
+      <span class="visually-hidden">Open {{ note.display_title }}</span>
+    </a>
+    {% if note.pinned %}<span class="pin-badge" title="Pinned">{{ icon('pin', 14) }}</span>{% endif %}
+    {% if note.title %}
+      <h3 class="card-title">{{ note.title_html or note.title }}</h3>
+    {% endif %}
+    {% if note.snippet_html %}
+      <p class="card-snippet">{{ note.snippet_html }}</p>
+    {% elif note.body %}
+      <div class="card-body prose">{{ note.preview_html }}</div>
+    {% endif %}
+    {% if note.total %}
+      <div class="progress" title="{{ note.done }} of {{ note.total }} done">
+        <span class="progress-bar"><span style="width: {{ note.percent }}%"></span></span>
+        <span class="progress-text">{{ note.done }}/{{ note.total }}</span>
+      </div>
+    {% endif %}
+    {% if note.tags %}
+      <div class="chips">{% for name in note.tags %}{{ tag_chip(name) }}{% endfor %}</div>
+    {% endif %}
+    <footer class="card-foot">
+      <span class="card-time">
+        {%- if view == 'trash' %}Deleted {{ note.deleted_at|ago|lower }}{% else %}{{ note.updated_at|ago }}{% endif -%}
+      </span>
+      <div class="card-actions">
+        {% if view == 'trash' %}
+          {{ action('notes.restore', note.id, 'restore', 'Restore') }}
+          {{ action('notes.purge', note.id, 'x', 'Delete forever', 'danger') }}
+        {% else %}
+          {{ action('notes.toggle_pin', note.id, 'pin', 'Unpin' if note.pinned else 'Pin', 'is-on' if note.pinned else '') }}
+          {{ action('notes.toggle_archive', note.id, 'archive', 'Unarchive' if note.archived else 'Archive') }}
+          {{ action('notes.trash', note.id, 'trash', 'Move to Trash') }}
+        {% endif %}
+      </div>
+    </footer>
+  </article>
+{%- endmacro %}
+
+{# The flower from the logo, drawn small for empty pages. Fixed colors, like the logo. #}
+{% macro flower(size=88) -%}
+  <svg class="flower" width="{{ size }}" height="{{ size }}" viewBox="-110 -110 220 220" aria-hidden="true">
+    <g stroke="#ffffff" stroke-width="8" fill="#9dbcff">
+      <circle cx="0" cy="-58" r="50"/><circle cx="55.2" cy="-17.9" r="50"/><circle cx="34.1" cy="46.9" r="50"/>
+      <circle cx="-34.1" cy="46.9" r="50"/><circle cx="-55.2" cy="-17.9" r="50"/>
+    </g>
+    <circle r="33" fill="#ffffff"/><circle r="23" fill="#ffc53d"/><circle r="8" fill="#f59e0b"/>
+  </svg>
+{%- endmacro %}

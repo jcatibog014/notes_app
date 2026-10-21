@@ -1,0 +1,158 @@
+{% import "_macros.html" as ui with context %}
+{# The sidebar's views: (key, icon). Labels and SQL live in notes.VIEWS. #}
+{% set view_icons = [('all', 'notes'), ('pinned', 'pin'), ('archive', 'archive'), ('trash', 'trash')] %}
+{% set current_view = request.args.get('view', 'all') if request.endpoint == 'notes.index' else None %}
+{% set current_tag = request.args.get('tag', '')|lower if request.endpoint == 'notes.index' else '' %}
+<!doctype html>
+{# data-theme and data-appearance pick the colors in style.css. They change
+   only the accent colors: the logo is a fixed image and never changes. #}
+<html lang="en" data-theme="{{ g.user.theme if g.user else 'default' }}"
+      data-appearance="{{ g.user.appearance if g.user else 'system' }}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  {# app.js reads the CSRF token from here for the requests it sends. #}
+  <meta name="csrf-token" content="{{ csrf_token() }}">
+  <title>{% block title %}{% endblock %}Forget-Me-Note</title>
+  {# The logo is also the icon in the browser tab and on a phone's home screen. #}
+  <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
+  <link rel="apple-touch-icon" href="{{ url_for('static', filename='logo.png') }}">
+  <meta name="theme-color" content="#5a73e6">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Inter:wght@400;500;600;700&display=swap">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body class="{{ 'signed-in' if g.user else 'guest' }}">
+{% if g.user %}
+  <div class="shell">
+    <aside class="sidebar" aria-label="Sidebar">
+      <a class="brand" href="{{ url_for('notes.index') }}">
+        <img class="brand-logo" src="{{ url_for('static', filename='logo.png') }}" alt="" width="38" height="38">
+        <span>Forget-Me-Note</span>
+      </a>
+
+      <a class="btn btn-primary btn-new" href="{{ url_for('notes.new', tag=current_tag or None) }}">
+        {{ ui.icon('plus') }} New Note <kbd>N</kbd>
+      </a>
+
+      <nav class="side-nav" aria-label="Views">
+        {% for key, icon_name in view_icons %}
+          {% set active = current_view == key and not current_tag and not request.args.get('q') %}
+          <a class="side-link{% if active %} active{% endif %}" href="{{ url_for('notes.index', view=None if key == 'all' else key) }}"
+             {% if active %}aria-current="page"{% endif %}>
+            {{ ui.icon(icon_name) }}<span>{{ views[key][0] }}</span>
+            {% if view_counts[key] %}<span class="count">{{ view_counts[key] }}</span>{% endif %}
+          </a>
+        {% endfor %}
+      </nav>
+
+      <div class="side-section">
+        <div class="side-heading">
+          <span>Tags</span>
+          <a href="{{ url_for('tags.index') }}" class="side-manage{% if request.endpoint == 'tags.index' %} active{% endif %}">Manage</a>
+        </div>
+        <nav class="side-tags" aria-label="Tags">
+          {% for tag in sidebar_tags %}
+            <a class="side-link{% if current_tag == tag.name %} active{% endif %}" href="{{ url_for('notes.index', tag=tag.name) }}"
+               {% if current_tag == tag.name %}aria-current="page"{% endif %}>
+              <span class="dot tag-{{ tag_color(tag.name) }}" aria-hidden="true"></span>
+              <span class="side-tag-name">{{ tag.name }}</span><span class="count">{{ tag.count }}</span>
+            </a>
+          {% else %}
+            <p class="side-empty">Add #tags to your notes and they'll show up here.</p>
+          {% endfor %}
+        </nav>
+      </div>
+
+      <div class="side-footer">
+        <a class="account-link{% if request.endpoint == 'profile.index' %} active{% endif %}" href="{{ url_for('profile.index') }}">
+          {{ ui.avatar(g.user) }}
+          <span class="account-text">
+            <strong>{{ g.user.display_name or g.user.username }}</strong>
+            <span>Profile &amp; theme</span>
+          </span>
+        </a>
+        <form method="post" action="{{ url_for('auth.logout') }}">
+          {{ ui.csrf() }}
+          <button class="icon-btn" type="submit" title="Log out" aria-label="Log out">{{ ui.icon('logout') }}</button>
+        </form>
+      </div>
+    </aside>
+
+    <div class="main">
+      <header class="topbar">
+        <a class="mobile-brand" href="{{ url_for('notes.index') }}" aria-label="Forget-Me-Note home">
+          <img class="brand-logo" src="{{ url_for('static', filename='logo.png') }}" alt="" width="34" height="34">
+        </a>
+        <form class="search" method="get" action="{{ url_for('notes.index') }}" role="search">
+          {% if current_view and current_view != 'all' %}<input type="hidden" name="view" value="{{ current_view }}">{% endif %}
+          {% if current_tag %}<input type="hidden" name="tag" value="{{ current_tag }}">{% endif %}
+          {{ ui.icon('search') }}
+          <input id="search" name="q" type="search" value="{{ request.args.get('q', '') if request.endpoint == 'notes.index' else '' }}"
+                 placeholder="Search notes, or try tag:ideas" aria-label="Search notes" autocomplete="off">
+          <kbd class="search-kbd">Ctrl K</kbd>
+        </form>
+        <button class="icon-btn" type="button" popovertarget="shortcuts" title="Keyboard shortcuts" aria-label="Keyboard shortcuts">{{ ui.icon('keyboard') }}</button>
+      </header>
+
+      <main class="content">
+{% else %}
+  <main class="guest-main">
+{% endif %}
+        {# One block for both layouts: Jinja allows each block only once. #}
+        {% block content %}{% endblock %}
+      </main>
+{% if g.user %}
+    </div>
+  </div>
+
+  {# Phones: the sidebar becomes this bar at the bottom. #}
+  <nav class="bottom-nav" aria-label="Main">
+    <a class="{% if current_view == 'all' and not current_tag %}active{% endif %}" href="{{ url_for('notes.index') }}">{{ ui.icon('notes', 22) }}<span>Notes</span></a>
+    <a class="{% if request.endpoint == 'tags.index' %}active{% endif %}" href="{{ url_for('tags.index') }}">{{ ui.icon('tag', 22) }}<span>Tags</span></a>
+    <a class="bottom-new" href="{{ url_for('notes.new', tag=current_tag or None) }}" aria-label="New note">{{ ui.icon('plus', 26) }}</a>
+    <a class="{% if current_view in ['archive', 'trash'] %}active{% endif %}" href="{{ url_for('notes.index', view='archive') }}">{{ ui.icon('archive', 22) }}<span>Archive</span></a>
+    <a class="{% if request.endpoint == 'profile.index' %}active{% endif %}" href="{{ url_for('profile.index') }}">{{ ui.icon('user', 22) }}<span>Profile</span></a>
+  </nav>
+
+  <div class="sheet" id="shortcuts" popover>
+    <h2 class="sheet-title">Keyboard Shortcuts</h2>
+    <dl class="shortcut-list">
+      <div><dt><kbd>Ctrl</kbd> <kbd>K</kbd> or <kbd>/</kbd></dt><dd>Search</dd></div>
+      <div><dt><kbd>N</kbd> or <kbd>Alt</kbd> <kbd>N</kbd></dt><dd>New note</dd></div>
+      <div><dt><kbd>Ctrl</kbd> <kbd>S</kbd></dt><dd>Save now (notes also save as you type)</dd></div>
+      <div><dt><kbd>Ctrl</kbd> <kbd>B</kbd> / <kbd>I</kbd></dt><dd>Bold / italic in the editor</dd></div>
+      <div><dt><kbd>Ctrl</kbd> <kbd>E</kbd></dt><dd>Switch between write and preview</dd></div>
+      <div><dt><kbd>Esc</kbd></dt><dd>Back to your notes</dd></div>
+      <div><dt><kbd>?</kbd></dt><dd>This list</dd></div>
+    </dl>
+  </div>
+{% endif %}
+
+  {# Messages saved with flash() show up once, on the next page, as toasts.
+     They fade away by themselves, except errors. #}
+  <div class="toasts">
+    {% for category, message in get_flashed_messages(with_categories=true) %}
+      {% if category == 'error' %}
+        <p class="toast toast-error" role="alert">{{ message }}</p>
+      {% elif category.startswith('undo:') %}
+        {# "undo:12" means: note 12 went to the Trash, and Undo restores it. #}
+        <div class="toast" role="status">
+          <span>{{ message }}</span>
+          <form method="post" action="{{ url_for('notes.restore', note_id=category[5:]|int, **keep) }}">
+            {{ ui.csrf() }}
+            <button class="toast-undo" type="submit">Undo</button>
+          </form>
+        </div>
+      {% else %}
+        <p class="toast" role="status">{{ message }}</p>
+      {% endif %}
+    {% endfor %}
+  </div>
+
+  {% if g.user %}
+    <script src="{{ url_for('static', filename='app.js') }}" defer></script>
+  {% endif %}
+</body>
+</html>

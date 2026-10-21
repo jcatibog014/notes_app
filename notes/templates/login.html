@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+
+{% block title %}Log In · {% endblock %}
+
+{% block content %}
+<div class="auth">
+  {# The logo and name, big, to welcome people. #}
+  <div class="auth-brand">
+    <img src="{{ url_for('static', filename='logo.png') }}" alt="" width="104" height="104">
+    <p class="auth-name">Forget-Me-Note</p>
+    <p class="hint">Little notes, never forgotten.</p>
+  </div>
+
+  <form class="card" method="post">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <h1 class="card-title">Log In</h1>
+    {% if error %}<p class="flash flash-error" role="alert">{{ error }}</p>{% endif %}
+
+    {# autocomplete tells password managers what each box is for. #}
+    <div class="field">
+      <label for="username">Username</label>
+      <input id="username" name="username" type="text" value="{{ username }}"
+             required autocomplete="username" autofocus>
+    </div>
+
+    <div class="field">
+      <label for="password">Password</label>
+      <input id="password" name="password" type="password" required autocomplete="current-password">
+    </div>
+
+    <button class="btn btn-primary btn-block" type="submit">Log In</button>
+  </form>
+
+  <p class="switch">New here? <a href="{{ url_for('auth.register') }}">Create an account</a>.</p>
+</div>
+{% endblock %}

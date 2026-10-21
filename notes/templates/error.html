@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% import "_macros.html" as ui with context %}
+
+{% block title %}{{ error.name }} · {% endblock %}
+
+{% block content %}
+<div class="empty error-card">
+  {{ ui.flower() }}
+  <h1>{{ error.name }}</h1>
+  <p>{{ error.description }}</p>
+  <a class="btn btn-primary" href="{{ url_for('notes.index') }}">Back to My Notes</a>
+</div>
+{% endblock %}

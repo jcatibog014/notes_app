@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+{% import "_macros.html" as ui with context %}
+
+{% block title %}{% if tag %}#{{ tag }}{% elif q %}Search{% else %}{{ heading }}{% endif %} · {% endblock %}
+
+{% block content %}
+<header class="page-head">
+  <div>
+    {% if tag %}
+      <p class="eyebrow">Tag</p>
+      <h1><span class="dot dot-big tag-{{ tag_color(tag) }}" aria-hidden="true"></span>#{{ tag }}</h1>
+    {% elif q %}
+      <p class="eyebrow">{{ 'Searching ' ~ heading if view != 'all' else 'Searching all notes' }}</p>
+      <h1>Search</h1>
+    {% elif view == 'all' %}
+      <p class="eyebrow">{{ greeting }} 🌼</p>
+      <h1>Your Notes</h1>
+    {% else %}
+      <h1>{{ heading }}</h1>
+    {% endif %}
+  </div>
+  <div class="head-actions">
+    {% if view == 'trash' and notes %}
+      <form method="post" action="{{ url_for('notes.empty_trash') }}" data-confirm="Delete every note in the Trash forever?">
+        {{ ui.csrf() }}
+        <button class="btn btn-ghost danger" type="submit">{{ ui.icon('trash') }} Empty Trash</button>
+      </form>
+    {% elif view == 'all' %}
+      <button class="btn btn-ghost" type="button" popovertarget="import-sheet">{{ ui.icon('upload') }} Import</button>
+    {% endif %}
+  </div>
+</header>
+
+{% if view == 'all' and not q and not tag %}
+  {# Quick capture: jot something down without leaving the page. #}
+  <form class="capture note-default" method="post" action="{{ url_for('notes.create') }}">
+    {{ ui.csrf() }}
+    <input type="hidden" name="next" value="index">
+    <input class="capture-title" name="title" type="text" placeholder="Title" aria-label="Title" maxlength="120" autocomplete="off">
+    <textarea class="capture-body" name="body" rows="1" placeholder="Take a note…" aria-label="Take a note"></textarea>
+    <div class="capture-actions">
+      <span class="hint">Markdown works: **bold**, - [ ] to-do, #tag</span>
+      <button class="btn btn-primary btn-small" type="submit">Add Note</button>
+    </div>
+  </form>
+{% endif %}
+
+{% if q %}
+  <div class="result-line" role="status">
+    <p><strong>{{ notes|length }}</strong> {{ 'result' if notes|length == 1 else 'results' }} for “{{ q }}”
+      {%- if view != 'all' %} in {{ heading }}{% endif %}</p>
+    {# Show how the search was understood, so the filters teach themselves. #}
+    <div class="chips">
+      {% for name in query.tags %}<span class="chip chip-filter">tag: {{ name }}</span>{% endfor %}
+      {% if query.pinned %}<span class="chip chip-filter">pinned</span>{% endif %}
+      {% for color in query.colors %}<span class="chip chip-filter">color: {{ color }}</span>{% endfor %}
+      {% if query.checklist %}<span class="chip chip-filter">has checklist</span>{% endif %}
+      {% for phrase in query.phrases %}<span class="chip chip-filter">“{{ phrase }}”</span>{% endfor %}
+    </div>
+    <a class="btn btn-ghost btn-small" href="{{ url_for('notes.index', view=None if view == 'all' else view, tag=tag) }}">Clear Search</a>
+  </div>
+{% endif %}
+
+{% if view == 'trash' and notes %}
+  <p class="hint trash-hint">Notes in the Trash are deleted for good after {{ trash_days }} days.</p>
+{% endif %}
+
+{% if pinned %}
+  <h2 class="section-label">{{ ui.icon('pin', 14) }} Pinned</h2>
+  <div class="masonry">{% for note in pinned %}{{ ui.note_card(note, view) }}{% endfor %}</div>
+  {% if others %}<h2 class="section-label">Others</h2>{% endif %}
+{% endif %}
+
+{% if others %}
+  <div class="masonry">{% for note in others %}{{ ui.note_card(note, view) }}{% endfor %}</div>
+{% elif not pinned %}
+  <div class="empty">
+    {{ ui.flower() }}
+    {% if q %}
+      <h2>No notes match “{{ q }}”</h2>
+      <p>Try fewer words, or the start of a word: “bud” finds “budget”.</p>
+    {% elif tag %}
+      <h2>No notes tagged #{{ tag }}</h2>
+      <p><a href="{{ url_for('notes.new', tag=tag) }}">Write one</a>.</p>
+    {% elif view == 'trash' %}
+      <h2>The Trash is empty</h2>
+      <p>Deleted notes wait here for {{ trash_days }} days, in case you change your mind.</p>
+    {% elif view == 'archive' %}
+      <h2>Nothing archived</h2>
+      <p>Archive notes you want to keep but don't need to see every day.</p>
+    {% elif view == 'pinned' %}
+      <h2>No pinned notes</h2>
+      <p>Pin the notes you use most, and they'll stay on top.</p>
+    {% else %}
+      <h2>Your first note is waiting</h2>
+      <p>Jot something down above, or press <kbd>N</kbd> for the full editor.</p>
+    {% endif %}
+  </div>
+{% endif %}
+
+<div class="sheet" id="import-sheet" popover>
+  <form method="post" action="{{ url_for('notes.import_notes') }}" enctype="multipart/form-data">
+    {{ ui.csrf() }}
+    <h2 class="sheet-title">Import Notes</h2>
+    <p class="hint">Pick Markdown (.md) or text files. Each one becomes a note. A “title:” and “tags:” block at the top is read too.</p>
+    <input class="file-input" name="files" type="file" accept=".md,.markdown,.txt,text/markdown,text/plain" multiple required>
+    <div class="sheet-actions">
+      <button class="btn btn-ghost" type="button" popovertarget="import-sheet" popovertargetaction="hide">Cancel</button>
+      <button class="btn btn-primary" type="submit">Import</button>
+    </div>
+  </form>
+</div>
+{% endblock %}
