@@ -28,19 +28,28 @@ Your notes as a grid of pastel cards. Pinned notes stay on top, checklists show 
 
 - **Accounts**: sign up, log in and log out. Each person sees only their own notes.
 - **Notes**: create, edit, copy and delete. A note needs a title *or* some text, not both.
-- **Autosave**: the editor saves as you type ("Saving… / Saved ✓"), and once more if you leave the page.
+- **Welcome tour**: four short steps the first time you log in (take a note, `#tags`, `[[links]]`, finding things). You can replay it from your profile.
+- **Autosave you can trust**: the editor saves as you type. The status stays calm (a check, then "Saved 2 min ago"), only says "Saving…" when a save is slow, and if a save fails it says so, retries by itself and offers a **Retry** button.
 - **Markdown, written by hand** (no library): `# headings`, `**bold**`, `*italic*`, `~~strike~~`, `` `code` ``, code blocks, bulleted and numbered lists, `- [ ]` checkboxes, `> quotes`, links and `---`. Write, Split or Preview mode. Your text is escaped first, so nothing in a note can run as code.
 - **Checklists**: tick boxes on the card or in the preview, and see the progress bar fill up.
-- **Tags**: type them in the tag box (as chips), or write `#tags` anywhere in the text. Click one in the sidebar to see its notes. The **Tags page** renames (renaming onto an existing tag merges them) and deletes tags, and updates the `#tags` in your text too.
-- **Full-text search** with SQLite's FTS5: the best matches come first, matches are highlighted, and `bud` already finds `budget` while you type. Filters: `tag:work` or `#work`, `is:pinned`, `color:blue`, `has:checklist` and `"exact phrases"`. (Without FTS5, a simpler search does the same job.)
-- **Links between notes**: write `[[Note title]]`. A link to a note that doesn't exist yet offers to create it, and every note lists the notes that link to it (**Linked From**).
+- **Tags**: type them in the tag box (chips with suggestions), or write `#tags` anywhere in the text (they show in the box as dotted "from text" chips). Click one in the sidebar to see its notes. The **Tags page** renames and deletes tags and updates the `#tags` in your text too. A rename first shows the notes it will change, and warns clearly when it will merge into a tag you already have.
+- **Full-text search** with SQLite's FTS5: the best matches come first (exact words before word starts), matches are highlighted, and `bud` already finds `budget` while you type. **Filter chips** under the heading (Pinned, Has checklist, Color, Tag) switch filters on and off, and a mistyped filter like `tags:work` gets a "Did you mean `tag:work`?" (Without FTS5, a simpler search does the same job.)
+- **Suggestions while typing**: type `[[` to pick a note to link, or `#` to pick a tag.
+- **Links between notes**: `[[Note title]]`. A link to a note that doesn't exist yet offers to create it, and every note lists the notes that link to it (**Linked From**, with a count, folds away).
+- **Sort** by last edited, date created or title (pinned notes stay on top), and **Jump Back In** to the notes you opened last.
+- **Templates**: start a checklist, meeting notes, a daily journal or an idea from **From Template**.
+- **Select mode**: pin, archive, tag or trash many notes at once.
+- **Focus mode** (`Ctrl Shift F`): just you and the note.
+- **Copy** a note as Markdown or as plain text, and **Export All** as a zip of `.md` files.
 - **Pin** notes to the top, give them one of **8 pastel colors**, and **archive** the ones you want out of the way.
-- **Trash**: deleting moves a note to the Trash, with an **Undo** button. Restore it, delete it forever, or empty the Trash. Notes left there are deleted after 30 days.
+- **Trash**: deleting moves a note to the Trash, with an **Undo** snackbar that stays for 10 seconds (and waits while you reach for it). Each note in the Trash shows how many days it has left. Restore it, delete it forever, or empty the Trash: only those last two ask "Are you sure?", since they can't be undone.
+- **Checklists that feel good**: tick boxes on the card or in the preview, watch the bar slide along, and get a little burst of petals at 100%.
 - **Note stats**: word count, reading time and checklist progress.
 - **Import and export**: download a note as a `.md` file (with its title and tags at the top), or import `.md` files.
 - **Profile**: pick a picture (an emoji), set the name your greeting uses, change your username or password, and choose a theme: **Forget-Me-Not** (the default), **Lavender**, **Rose**, **Mint**, **Marigold** or **Ink**, in light, dark or matching your device. The logo and app icon always stay the same.
-- **Keyboard shortcuts**: `Ctrl K` or `/` search, `N` new note, `Ctrl S` save, `Ctrl B`/`Ctrl I` bold/italic, `Ctrl E` preview, `Esc` back, `?` the list.
-- **Nice touches**: a greeting, a quick "Take a note…" box, lists that continue when you press Enter, a bottom bar on phones, and sheets that slide up.
+- **Keyboard shortcuts**: `Ctrl K` or `/` search, `N` new note, `↓ ↑ Enter` move through notes, `Ctrl B`/`Ctrl I` bold/italic, `Ctrl Z` undo (formatting too), `Ctrl E` preview, `Ctrl Enter` save and close, `Esc` back, `?` the list (grouped, with a search box).
+- **Accessible**: visible focus rings, labels on every icon button, sheets that keep keyboard focus inside them, 44px tap targets on touch screens, less motion for people who ask their device for it, and a test that checks text contrast on every note color.
+- **Nice touches**: a greeting (you can turn it off in Profile), a quick "Take a note…" box, lists that continue when you press Enter, a bottom bar on phones that steps aside for the keyboard, and sheets you can drag down to close.
 
 ## Setup (Windows, PowerShell)
 
