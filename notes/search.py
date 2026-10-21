@@ -14,11 +14,15 @@ ranks the best matches first and marks where they were found. If this
 SQLite has no FTS5, a slower LIKE search does the same job, minus the ranking.
 """
 import re
+from difflib import get_close_matches
 
 from markupsafe import Markup, escape
 
 from .markdown import plain_text
-from .validation import NOTE_COLORS
+from .validation import NOTE_COLORS, SORTS
+
+# The filters, and the values each one takes (None = any value, like a tag name).
+FILTERS = {"tag": None, "is": ["pinned"], "color": list(NOTE_COLORS), "has": ["checklist"]}
 
 # A "quoted phrase", or one run of characters without spaces.
 TOKEN = re.compile(r'"([^"]*)"?|(\S+)')
@@ -36,7 +40,8 @@ def parse_query(text):
     >>> parse_query('tag:work "next steps" budget')["phrases"]
     ['next steps']
     """
-    query = {"words": [], "phrases": [], "tags": [], "colors": [], "pinned": False, "checklist": False}
+    query = {"words": [], "phrases": [], "tags": [], "colors": [], "pinned": False, "checklist": False,
+             "suggestions": []}
     for match in TOKEN.finditer(text or ""):
         if match[1] is not None:  # a "quoted phrase"
             phrase = " ".join(match[1].split())
@@ -58,7 +63,42 @@ def parse_query(text):
             query["tags"].append(token[1:].lower())
         elif re.search(r"\w", token):  # skip stray punctuation like "-"
             query["words"].append(token)
+            if colon and (fix := suggest_filter(key, value)):
+                query["suggestions"].append((token, fix))
     return query
+
+
+def suggest_filter(key, value):
+    """A fix for something that looks like a mistyped filter, or None.
+
+    "tags:work" -> "tag:work", "is:pin" -> "is:pinned", "color:purpel" ->
+    "color:purple". difflib.get_close_matches() finds the known word that
+    is most like what was typed.
+    """
+    if not value:
+        return None
+    keys = get_close_matches(key, FILTERS, n=1, cutoff=0.6)
+    if not keys:
+        return None
+    choices = FILTERS[keys[0]]
+    if choices is None:
+        return f"{keys[0]}:{value}"
+    values = [value] if value in choices else get_close_matches(value, choices, n=1, cutoff=0.5)
+    return f"{keys[0]}:{values[0]}" if values else None
+
+
+def toggle_token(text, token):
+    """Add `token` (like "is:pinned") to the search text, or take it out if it's there.
+
+    Used by the filter chips under the search box: each chip is a link to
+    the same search with its filter switched on or off.
+    """
+    tokens = [match[0] for match in TOKEN.finditer(text or "")]
+    if token.lower() in [t.lower() for t in tokens]:
+        tokens = [t for t in tokens if t.lower() != token.lower()]
+    else:
+        tokens.append(token)
+    return " ".join(tokens)
 
 
 def fts_expression(query):
@@ -68,11 +108,17 @@ def fts_expression(query):
     FTS5 (like - or *) are searched as text instead of breaking the search.
     A " inside is written twice, which is how FTS5 escapes it. The * after
     a word also finds longer words that start with it, so "bud" finds
-    "budget" while you're still typing.
+    "budget" while you're still typing. Each word is searched both ways,
+    ("bud" OR "bud"*): a note with the exact word matches twice, so its
+    score is better and it comes first.
     """
-    parts = ['"' + word.replace('"', '""') + '"*' for word in query["words"]]
+    parts = []
+    for word in query["words"]:
+        quoted = '"' + word.replace('"', '""') + '"'
+        parts.append(f"({quoted} OR {quoted}*)")
     parts += ['"' + phrase.replace('"', '""') + '"' for phrase in query["phrases"]]
-    return " ".join(parts)  # FTS5 reads a space as AND
+    # A space means AND between plain words, but not next to (brackets), so write it out.
+    return " AND ".join(parts)
 
 
 def like_pattern(text):
@@ -80,13 +126,14 @@ def like_pattern(text):
     return "%" + text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
 
 
-def find_notes(db, user_id, where, text="", tag=None, use_fts=True):
+def find_notes(db, user_id, where, text="", tag=None, use_fts=True, sort="updated"):
     """Return (notes, query): the user's notes in a view, filtered and searched.
 
     where   -- SQL for the view, like "deleted_at IS NULL AND archived = 0".
                It comes from notes.VIEWS, never from the user.
     text    -- what was typed in the search box
     tag     -- the tag picked in the sidebar, if any
+    sort    -- a key of SORTS. Searches are sorted by best match instead.
 
     Each note is a dict. When words were searched, it also has title_html
     and snippet_html with the matches in <mark>.
@@ -117,9 +164,10 @@ def find_notes(db, user_id, where, text="", tag=None, use_fts=True):
     elif searching:
         rows = search_like(db, query, conditions, params)
     else:
+        order = SORTS.get(sort, SORTS["updated"])[1]
         rows = db.execute(
             f"SELECT notes.* FROM notes WHERE {' AND '.join(conditions)}"
-            " ORDER BY notes.pinned DESC, notes.updated_at DESC, notes.id DESC",
+            f" ORDER BY notes.pinned DESC, {order}",
             params,
         ).fetchall()
         rows = [dict(row) for row in rows]
