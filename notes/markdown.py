@@ -41,7 +41,10 @@ LINK = re.compile(r"\[([^\]\n]+)\]\(([^)\s]+)\)")
 BARE_URL = re.compile(r"\bhttps?://(?:(?!&#\d+;)[^\s<\"'])+(?<![.,:;!?)\]])")
 # (?=\S) and (?<=\S): the text inside must not start or end with a space, so
 # "2 * 3 * 4" isn't italic.
+BOLD_ITALIC = re.compile(r"\*\*\*(?=\S)(.+?)(?<=\S)\*\*\*")
 BOLD = re.compile(r"\*\*(?=\S)(.+?)(?<=\S)\*\*")
+# The tags the inline rules make, to check they nest properly (see _balanced()).
+INLINE_TAG = re.compile(r"<(/?)(strong|em|del)>")
 STRIKE = re.compile(r"~~(?=\S)(.+?)(?<=\S)~~")
 # *one star* or _underscores_. The underscores need a non-letter on both
 # sides, so snake_case_names are left alone.
@@ -181,12 +184,34 @@ def render_inline(text, note_link=None, tag_url=None):
         return keep(f'<a class="hashtag" href="{escape(tag_url(name))}">#{m[1]}</a>')
     text = HASHTAG.sub(hashtag, text)
 
-    text = BOLD.sub(r"<strong>\1</strong>", text)
-    text = STRIKE.sub(r"<del>\1</del>", text)
-    text = ITALIC.sub(lambda m: f"<em>{m[1] or m[2]}</em>", text)
+    # Marks that overlap, like "**a *b** c*", would make tags that cross:
+    # <strong>a <em>b</strong> c</em>. wrap() only adds a tag around text
+    # whose own tags are all closed, and leaves the marks as typed otherwise.
+    def wrap(tag):
+        def replace(m):
+            inner = m[1] if m[1] is not None else m[2]  # ITALIC has two ways to match
+            return f"<{tag}>{inner}</{tag}>" if _balanced(inner) else m[0]
+        return replace
+
+    text = BOLD_ITALIC.sub(lambda m: f"<strong><em>{m[1]}</em></strong>", text)
+    text = BOLD.sub(wrap("strong"), text)
+    text = STRIKE.sub(wrap("del"), text)
+    text = ITALIC.sub(wrap("em"), text)
 
     # Put the saved pieces back.
     return re.sub(r"\x00(\d+)\x00", lambda m: saved[int(m[1])], text)
+
+
+def _balanced(fragment):
+    """True if every <strong>, <em> and <del> in the fragment is closed, in order."""
+    open_tags = []
+    for match in INLINE_TAG.finditer(fragment):
+        closing, name = match[1], match[2]
+        if not closing:
+            open_tags.append(name)
+        elif not open_tags or open_tags.pop() != name:
+            return False
+    return not open_tags
 
 
 # ---------- Reading text out of notes ----------
