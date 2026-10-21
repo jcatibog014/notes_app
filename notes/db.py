@@ -55,8 +55,17 @@ def init_fts(db):
 
 
 # Columns added to a table after it was first made, with their SQL types.
-# None yet: this is where they go, so older databases get them too.
-NEW_COLUMNS = {}
+# Databases made before them get them added by add_missing_columns().
+NEW_COLUMNS = {
+    "users": {
+        "onboarded": "INTEGER NOT NULL DEFAULT 0",
+        "show_greeting": "INTEGER NOT NULL DEFAULT 1",
+        "editor_mode": "TEXT NOT NULL DEFAULT 'write'",
+    },
+    "notes": {
+        "opened_at": "TEXT",
+    },
+}
 
 
 def add_missing_columns(db):

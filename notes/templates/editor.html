@@ -13,21 +13,28 @@
      form anyway, through form="note-form". #}
   <div class="editor-bar">
     <a class="icon-btn" href="{{ url_for('notes.index') }}" title="Back to notes (Esc)" aria-label="Back to notes" data-back>{{ ui.icon('back') }}</a>
+    {# app.js keeps this up to date: a dot while saving, a check when saved,
+       then a quiet "Saved 2 min ago". If a save fails, it says so and offers Retry. #}
     <span class="save-status" id="save-status" aria-live="polite">
-      {%- if in_trash %}In the Trash{% elif note %}Edited {{ note.updated_at|ago|lower }}{% else %}New note{% endif -%}
+      <span class="save-text">
+        {%- if in_trash %}In the Trash{% elif note %}Edited {{ note.updated_at|ago|lower }}{% else %}New note{% endif -%}
+      </span>
+      <button class="save-retry" type="button" hidden>Retry</button>
     </span>
 
     <div class="bar-actions">
       <div class="mode-toggle" role="group" aria-label="View">
-        <button type="button" data-mode="write" title="Write">{{ ui.icon('pen', 16) }}<span>Write</span></button>
-        <button type="button" data-mode="split" title="Side by side">{{ ui.icon('columns', 16) }}<span>Split</span></button>
-        <button type="button" data-mode="preview" title="Preview (Ctrl+E)">{{ ui.icon('eye', 16) }}<span>Preview</span></button>
+        <button type="button" data-mode="write" title="Write" aria-label="Write">{{ ui.icon('pen', 16) }}<span>Write</span></button>
+        <button type="button" data-mode="split" title="Side by side" aria-label="Split">{{ ui.icon('columns', 16) }}<span>Split</span></button>
+        <button type="button" data-mode="preview" title="Preview (Ctrl+E)" aria-label="Preview">{{ ui.icon('eye', 16) }}<span>Preview</span></button>
       </div>
+
+      <button class="icon-btn" type="button" data-focus-mode title="Focus mode (Ctrl+Shift+F)" aria-label="Focus mode" aria-pressed="false">{{ ui.icon('maximize') }}</button>
 
       {% if not in_trash %}
         <label class="icon-btn toggle-pin" title="Pin">
           <input class="visually-hidden" type="checkbox" name="pinned" value="1" form="note-form" {% if form.get('pinned') %}checked{% endif %}>
-          {{ ui.icon('pin') }}<span class="visually-hidden">Pinned</span>
+          {{ ui.icon('pin') }}<span class="visually-hidden">Pin this note</span>
         </label>
 
         <button class="icon-btn" type="button" popovertarget="color-sheet" title="Color" aria-label="Color">{{ ui.icon('palette') }}</button>
@@ -64,6 +71,9 @@
               {{ ui.csrf() }}
               <button class="menu-item" type="submit">{{ ui.icon('copy') }} Make a Copy</button>
             </form>
+            {# Copy buttons need the clipboard, so app.js un-hides them. #}
+            <button class="menu-item" type="button" data-copy="markdown" hidden>{{ ui.icon('clipboard') }} Copy as Markdown</button>
+            <button class="menu-item" type="button" data-copy="plain" hidden>{{ ui.icon('clipboard') }} Copy as Plain Text</button>
             <a class="menu-item" href="{{ url_for('notes.export', note_id=note.id) }}">{{ ui.icon('download') }} Download as Markdown</a>
             <form method="post" action="{{ url_for('notes.toggle_archive', note_id=note.id) }}">
               {{ ui.csrf() }}<input type="hidden" name="next" value="editor">
@@ -101,7 +111,8 @@
 
   <form class="sheet-paper" id="note-form" method="post"
         action="{{ url_for('notes.save', note_id=note.id) if note else url_for('notes.create') }}"
-        data-preview-url="{{ url_for('notes.preview') }}"
+        data-preview-url="{{ url_for('notes.preview') }}" data-plain-url="{{ url_for('notes.plain') }}"
+        data-mode-url="{{ url_for('profile.change_editor_mode') }}"
         {% if note %}data-check-url="{{ url_for('notes.check', note_id=note.id) }}"{% endif %}
         {% if not in_trash %}data-autosave{% endif %}>
     {{ ui.csrf() }}
@@ -114,11 +125,13 @@
 
       <div class="tags-field{% if errors.tags %} has-error{% endif %}">
         {{ ui.icon('tag', 16) }}
-        {# app.js turns this box into removable chips. Without JavaScript it's a plain text box. #}
-        <input id="tags" name="tags" type="text" value="{{ form.get('tags', '') }}" list="tag-suggestions"
+        {# app.js turns this box into removable chips, with suggestions as you
+           type. #tags written in the text show as dotted "from text" chips. #}
+        <input id="tags" name="tags" type="text" value="{{ form.get('tags', '') }}"
                placeholder="Add tags, like work, ideas" aria-label="Tags" autocomplete="off"
+               data-text-tags="{{ text_tags|join(',') }}"
                {% if errors.tags %}aria-invalid="true" aria-describedby="tags-error"{% endif %}>
-        <datalist id="tag-suggestions">{% for name in user_tags %}<option value="{{ name }}">{% endfor %}</datalist>
+        <a class="tags-manage" href="{{ url_for('tags.index') }}">Manage tags…</a>
       </div>
       {% if errors.tags %}<p class="error" id="tags-error">{{ errors.tags }}</p>{% endif %}
 
@@ -136,7 +149,7 @@
         <button class="toolbar-help" type="button" popovertarget="markdown-help" title="Formatting help">Aa?</button>
       </div>
 
-      <div class="panes" id="panes">
+      <div class="panes" id="panes" data-mode="{{ editor_mode if not in_trash else 'preview' }}">
         <div class="pane-write">
           <textarea id="body" name="body" class="body-input" rows="12"
                     placeholder="Start writing… Use # for headings, - [ ] for a checklist, #tags and [[Other note]] links."
@@ -167,16 +180,20 @@
   </footer>
 
   {% if backlinks %}
-    <section class="backlinks" aria-labelledby="backlinks-title">
-      <h2 id="backlinks-title">{{ ui.icon('link', 16) }} Linked From</h2>
+    <details class="backlinks" open>
+      <summary>{{ ui.icon('link', 16) }} Linked From <span class="count-badge">{{ backlinks|length }}</span></summary>
       <div class="chips">
         {% for link in backlinks %}
           <a class="chip chip-note note-{{ link.color }}" href="{{ url_for('notes.edit', note_id=link.id) }}">{{ link.title or 'Untitled' }}</a>
         {% endfor %}
       </div>
-    </section>
+    </details>
   {% endif %}
 </div>
+
+{# What the [[ and # suggestions offer while typing (app.js). tojson makes
+   it safe to put inside a <script> tag. #}
+<script type="application/json" id="editor-data">{{ {'titles': note_titles, 'tags': user_tags}|tojson }}</script>
 
 <div class="sheet" id="markdown-help" popover>
   <h2 class="sheet-title">Formatting</h2>

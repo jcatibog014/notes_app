@@ -3,7 +3,9 @@
 Every query filters on user_id = g.user["id"], so nobody can see or change
 someone else's notes, even by typing a note's id into the address bar.
 """
+import io
 import re
+import zipfile
 from datetime import datetime, timedelta
 
 from flask import (Blueprint, Response, abort, current_app, flash, g, jsonify, redirect,
@@ -11,11 +13,12 @@ from flask import (Blueprint, Response, abort, current_app, flash, g, jsonify, r
 
 from .auth import require_login
 from .db import get_db
-from .markdown import (checklist_progress, find_hashtags, find_wikilinks, parse_markdown_file,
+from .markdown import (checklist_progress, find_hashtags, find_wikilinks, parse_markdown_file, plain_text,
                        reading_minutes, render, to_markdown_file, toggle_checkbox, word_count)
-from .search import find_notes
+from .search import find_notes, toggle_token
 from .tags import prune_tags, save_tags, tag_color, tag_counts, tags_by_note
-from .validation import NOTE_COLORS, TITLE_MAX, capitalize_first, validate_note
+from .validation import (EDITOR_MODES, NOTE_COLORS, SORTS, TITLE_MAX, capitalize_first, parse_tags,
+                         tags_error, validate_note)
 
 bp = Blueprint("notes", __name__)
 bp.before_request(require_login)
@@ -33,6 +36,28 @@ TRASH_DAYS = 30
 # Cards show the start of a long note, not all of it.
 PREVIEW_CHARS = 900
 PREVIEW_LINES = 18
+RECENT_COUNT = 4  # notes in "Jump back in"
+
+# "New from template": key -> what the new note starts with.
+TEMPLATES = {
+    "checklist": {"label": "Checklist", "icon": "checklist", "title": "",
+                  "body": "- [ ] \n- [ ] \n- [ ] "},
+    "meeting": {"label": "Meeting notes", "icon": "list", "title": "Meeting: ",
+                "body": "## Agenda\n- \n\n## Notes\n\n\n## Action items\n- [ ] "},
+    "journal": {"label": "Daily journal", "icon": "pen", "title": "{today}",
+                "body": "## Grateful for\n- \n\n## Today\n\n\n## Tomorrow\n- [ ] "},
+    "idea": {"label": "Idea", "icon": "sparkle", "title": "",
+             "body": "**The idea:** \n\n**Why it matters:** \n\n**Next step:**\n- [ ] \n\n#ideas"},
+}
+
+# What the selection bar can do to many notes at once: action -> SQL SET.
+BULK_ACTIONS = {
+    "pin": "pinned = 1",
+    "unpin": "pinned = 0",
+    "archive": "archived = 1, pinned = 0",
+    "unarchive": "archived = 0",
+    "restore": "deleted_at = NULL",
+}
 
 
 # ---------- Helpers ----------
@@ -73,7 +98,7 @@ def get_note_or_404(note_id):
 
 
 def list_args():
-    """The current view, search and tag, to keep in links and redirects."""
+    """The current view, search, tag and sort, to keep in links and redirects."""
     args = {}
     view = request.values.get("view", "all")
     if view in VIEWS and view != "all":
@@ -81,7 +106,18 @@ def list_args():
     for key in ["q", "tag"]:
         if value := request.values.get(key, "").strip():
             args[key] = value
+    sort = request.values.get("sort", "updated")
+    if sort in SORTS and sort != "updated":
+        args["sort"] = sort
     return args
+
+
+def filter_url(token):
+    """A link to the current list with one search filter switched on or off."""
+    args = list_args()
+    q = toggle_token(args.get("q", ""), token)
+    args["q"] = q or None
+    return url_for("notes.index", **args)
 
 
 def go_back(note_id=None):
@@ -166,7 +202,16 @@ def decorate(rows):
         note["preview_html"] = render_note(preview)
         note["cut"] = preview != note["body"]  # cards of cut notes fade out at the bottom
         note.update(note_stats(note["body"]))
+        if note["deleted_at"]:
+            note["purge_in"] = days_until_purge(note["deleted_at"])
     return notes
+
+
+def days_until_purge(deleted_at):
+    """How many days a note in the Trash has left before it's deleted for good."""
+    deleted = datetime.strptime(deleted_at, "%Y-%m-%d %H:%M:%S")
+    left = deleted + timedelta(days=TRASH_DAYS) - now()
+    return max(0, left.days)
 
 
 def ago(stamp):
@@ -259,7 +304,8 @@ def insert_note(data, created_at=None):
 @bp.app_context_processor
 def template_values():
     """Values every template can use: the sidebar's counts and tags, and helpers."""
-    values = {"keep": list_args(), "tag_color": tag_color, "note_colors": NOTE_COLORS, "views": VIEWS}
+    values = {"keep": list_args(), "tag_color": tag_color, "note_colors": NOTE_COLORS, "views": VIEWS,
+              "filter_url": filter_url}
     if g.get("user"):
         db = get_db()
         counts = db.execute(
@@ -296,11 +342,14 @@ def index():
         view = "all"
     q = request.args.get("q", "").strip()
     tag = request.args.get("tag", "").strip().lower() or None
+    sort = request.args.get("sort", "updated")
+    if sort not in SORTS:
+        sort = "updated"
     if view == "trash":
         purge_old_trash()
 
     heading, where = VIEWS[view]
-    rows, query = find_notes(get_db(), g.user["id"], where, q, tag, current_app.config["USE_FTS"])
+    rows, query = find_notes(get_db(), g.user["id"], where, q, tag, current_app.config["USE_FTS"], sort)
     notes = decorate(rows)
     for note, row in zip(notes, rows):
         # Search results come with their matches marked (see search.py).
@@ -312,9 +361,25 @@ def index():
     if view == "all" and not q:
         pinned = [note for note in notes if note["pinned"]]
         others = [note for note in notes if not note["pinned"]]
+    # "Jump back in": the notes opened most recently, on the plain home page.
+    recent = []
+    if view == "all" and not q and not tag:
+        recent = get_db().execute(
+            "SELECT id, title, color FROM notes WHERE user_id = ? AND deleted_at IS NULL AND archived = 0"
+            " AND opened_at IS NOT NULL ORDER BY opened_at DESC LIMIT ?",
+            (g.user["id"], RECENT_COUNT),
+        ).fetchall()
+    # "Did you mean tag:work?": a link to the same search with the typo fixed.
+    suggestions = [
+        (typed, fix, url_for("notes.index", **dict(list_args(), q=toggle_token(toggle_token(q, typed), fix))))
+        for typed, fix in query["suggestions"]
+    ]
     return render_template(
-        "index.html", view=view, heading=heading, q=q, tag=tag, query=query,
-        notes=notes, pinned=pinned, others=others, greeting=greeting(), trash_days=TRASH_DAYS,
+        "index.html", view=view, heading=heading, q=q, tag=tag, query=query, sort=sort, sorts=SORTS,
+        suggestions=suggestions,
+        notes=notes, pinned=pinned, others=others, recent=recent, templates=TEMPLATES,
+        greeting=greeting() if g.user["show_greeting"] else None, trash_days=TRASH_DAYS,
+        tags=[row["name"] for row in tag_counts(get_db(), g.user["id"]) if row["count"]],
     )
 
 
@@ -322,11 +387,20 @@ def index():
 
 def render_editor(note, form, errors=None, backlinks=()):
     """The editor page. With errors, it answers 400 and keeps what was typed."""
-    stats = note_stats(form.get("body", ""))
+    body = form.get("body", "")
+    stats = note_stats(body)
+    # For the [[ and # suggestions while typing: the user's other note titles and tags.
+    titles = [row["title"] for row in get_db().execute(
+        "SELECT title FROM notes WHERE user_id = ? AND deleted_at IS NULL AND title != '' AND id != ?"
+        " ORDER BY updated_at DESC LIMIT 500",
+        (g.user["id"], note["id"] if note else 0),
+    )]
     html = render_template(
         "editor.html", note=note, form=form, errors=errors or {}, stats=stats,
-        backlinks=backlinks, preview_html=render_note(form.get("body", "")),
-        title_max=TITLE_MAX, user_tags=[tag["name"] for tag in tag_counts(get_db(), g.user["id"])],
+        backlinks=backlinks, preview_html=render_note(body), title_max=TITLE_MAX,
+        user_tags=[tag["name"] for tag in tag_counts(get_db(), g.user["id"])],
+        note_titles=titles, text_tags=find_hashtags(body),
+        editor_mode=g.user["editor_mode"] if g.user["editor_mode"] in EDITOR_MODES else "write",
     )
     return html, 400 if errors else 200
 
@@ -353,6 +427,10 @@ def new():
         "color": "default",
         "pinned": 0,
     }
+    # "New from template" fills in a starting title and text.
+    if template := TEMPLATES.get(request.args.get("template", "")):
+        form["title"] = form["title"] or template["title"].format(today=f"{now():%A, %B} {now().day}")
+        form["body"] = template["body"]
     return render_editor(None, form)
 
 
@@ -394,6 +472,10 @@ def edit(note_id):
     hashtags = find_hashtags(note["body"])
     form = dict(note)
     form["tags"] = ", ".join(tag for tag in tags if tag not in hashtags)
+    # Remember the visit for "Jump back in". It isn't an edit, so updated_at stays.
+    db = get_db()
+    db.execute("UPDATE notes SET opened_at = ? WHERE id = ?", (timestamp(), note_id))
+    db.commit()
     return render_editor(note, form, backlinks=backlinks_of(note))
 
 
@@ -427,6 +509,32 @@ def save(note_id):
 def preview():
     """The editor's Preview: Markdown in, HTML out (the same renderer as the cards)."""
     return render_note(request.form.get("body", "").replace("\r\n", "\n").rstrip())
+
+
+@bp.post("/plain")
+def plain():
+    """"Copy as plain text": the note's text without its Markdown marks."""
+    return Response(plain_text(request.form.get("body", "")), mimetype="text/plain")
+
+
+# ---------- The welcome tour ----------
+
+@bp.post("/welcome/done")
+def welcome_done():
+    """Finishing (or skipping) the tour: don't show it again."""
+    db = get_db()
+    db.execute("UPDATE users SET onboarded = 1 WHERE id = ?", (g.user["id"],))
+    db.commit()
+    return go_back()
+
+
+@bp.post("/welcome/again")
+def welcome_again():
+    """The profile's "Show the Tour Again" button."""
+    db = get_db()
+    db.execute("UPDATE users SET onboarded = 0 WHERE id = ?", (g.user["id"],))
+    db.commit()
+    return redirect(url_for("notes.index"))
 
 
 @bp.post("/notes/<int:note_id>/duplicate")
@@ -505,7 +613,7 @@ def trash(note_id):
     db = get_db()
     db.execute("UPDATE notes SET deleted_at = ?, pinned = 0 WHERE id = ?", (timestamp(), note_id))
     db.commit()
-    # The "undo:<id>" category shows an Undo button in the toast (base.html).
+    # The "undo:<ids>" category shows an Undo button in the toast (base.html).
     notify(f"Moved “{display_title(note)}” to the Trash.", f"undo:{note_id}")
     if is_fetch():
         return "", 204
@@ -532,6 +640,73 @@ def purge(note_id):
     delete_notes("id = ?", [note_id])
     notify(f"Deleted “{display_title(note)}” forever.")
     return redirect(url_for("notes.index", view="trash"))
+
+
+@bp.post("/notes/bulk")
+def bulk():
+    """Do one thing to many selected notes: pin, archive, tag, trash or restore.
+
+    The ids come from checkboxes, so they are checked against the user's
+    own notes first: ids that aren't theirs are simply left out.
+    """
+    db = get_db()
+    wanted = [int(value) for value in request.form.getlist("ids") if value.isdigit()]
+    ids = [row["id"] for row in db.execute(
+        f"SELECT id FROM notes WHERE user_id = ? AND id IN ({', '.join('?' for _ in wanted)})",
+        [g.user["id"], *wanted],
+    )] if wanted else []
+    if not ids:
+        notify("Select some notes first.", "error")
+        return go_back()
+
+    action = request.form.get("action", "")
+    marks = ", ".join("?" for _ in ids)
+    count = f"{len(ids)} {'note' if len(ids) == 1 else 'notes'}"
+    if action in BULK_ACTIONS:
+        db.execute(f"UPDATE notes SET {BULK_ACTIONS[action]} WHERE id IN ({marks})", ids)
+        message = {"pin": "Pinned", "unpin": "Unpinned", "archive": "Archived",
+                   "unarchive": "Unarchived", "restore": "Restored"}[action]
+        notify(f"{message} {count}.")
+    elif action == "trash":
+        db.execute(f"UPDATE notes SET deleted_at = ?, pinned = 0 WHERE id IN ({marks})", [timestamp(), *ids])
+        notify(f"Moved {count} to the Trash.", "undo:" + ",".join(map(str, ids)))
+    elif action == "tag":
+        names = parse_tags(request.form.get("tag", ""))
+        if not names or tags_error(names):
+            notify("Type a tag to add, like “work”.", "error")
+            return go_back()
+        for note_id in ids:
+            current = tags_by_note(db, [note_id])[note_id]
+            save_tags(db, g.user["id"], note_id, current + [name for name in names if name not in current])
+        notify(f"Tagged {count} with {' '.join('#' + name for name in names)}.")
+    else:
+        abort(400, "Pick something to do with the selected notes.")
+    db.commit()
+    return go_back()
+
+
+@bp.get("/notes/export.zip")
+def export_all():
+    """Every note (except the Trash) as .md files in one zip, for a backup."""
+    db = get_db()
+    notes = db.execute(
+        "SELECT * FROM notes WHERE user_id = ? AND deleted_at IS NULL ORDER BY created_at", (g.user["id"],)
+    ).fetchall()
+    tags = tags_by_note(db, [note["id"] for note in notes])
+    buffer = io.BytesIO()  # the zip is built in memory, like a file that never touches the disk
+    used = set()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+        for note in notes:
+            name = file_name(display_title(note))
+            # Two notes called "Ideas" become ideas.md and ideas-2.md.
+            stem, number = name[:-3], 2
+            while name in used:
+                name = f"{stem}-{number}.md"
+                number += 1
+            used.add(name)
+            archive.writestr(name, to_markdown_file(display_title(note), tags[note["id"]], note["body"]))
+    return Response(buffer.getvalue(), mimetype="application/zip",
+                    headers={"Content-Disposition": 'attachment; filename="forget-me-note.zip"'})
 
 
 @bp.post("/trash/empty")

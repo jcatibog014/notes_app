@@ -9,9 +9,42 @@ def test_trash_hides_a_note_and_offers_undo(client, post, add, fetch):
     assert note["deleted_at"] == "2026-10-20 09:00:00" and note["pinned"] == 0
     html = client.get("/").get_data(as_text=True)
     assert "Moved “Throw me away” to the Trash." in html
-    assert f'action="/notes/{note_id}/restore"' in html  # the Undo button
+    # The Undo button restores it through the bulk action, and can be dismissed.
+    assert 'class="toast toast-snackbar"' in html
+    assert f'<input type="hidden" name="ids" value="{note_id}">' in html
+    assert "data-dismiss" in html
     assert "Throw me away</h3>" not in html
     assert "Throw me away" in client.get("/?view=trash").get_data(as_text=True)
+
+
+def test_undo_restores(post, add, fetch):
+    note_id = add("Oops")
+    post(f"/notes/{note_id}/trash")
+    post("/notes/bulk", {"action": "restore", "ids": [str(note_id)]})
+    assert fetch(note_id)["deleted_at"] is None
+
+
+def test_trash_cards_count_down(client, add):
+    add("Fresh", deleted_at="2026-10-20 08:00:00")    # 30 days left (29 full days)
+    add("Nearly", deleted_at="2026-09-20 10:00:00")   # one hour left
+    html = client.get("/?view=trash").get_data(as_text=True)
+    assert "Deleted for good in 29 days" in html
+    assert '<span class="purge-in is-soon">Deleted for good today</span>' in html
+
+
+def test_empty_trash_confirms_with_the_count(client, add):
+    add("A", deleted_at="2026-10-19 10:00:00")
+    add("B", deleted_at="2026-10-19 10:00:00")
+    html = client.get("/?view=trash").get_data(as_text=True)
+    assert 'data-confirm="Delete all 2 notes in the Trash forever?' in html
+
+
+def test_moving_to_trash_doesnt_ask_first(client, add):
+    """Undo covers a normal delete, so there's no "Are you sure?" on it."""
+    add("Note")
+    html = client.get("/").get_data(as_text=True)
+    trash_form = html.split('action="/notes/1/trash"')[0].rsplit("<form", 1)[1]
+    assert "data-confirm" not in trash_form
 
 
 def test_restore(post, add, fetch):

@@ -67,6 +67,23 @@ def test_logo_and_app_icon_are_the_same_in_every_theme(client, post, theme, appe
     assert re.search(r'<link rel="apple-touch-icon" href="/static/logo.png\?v=\d+">', html)
 
 
+def test_turn_the_greeting_off(client, post, query):
+    assert "Good morning" in client.get("/").get_data(as_text=True)
+    post("/profile/preferences", {})
+    assert query("SELECT show_greeting FROM users WHERE id = 1")[0]["show_greeting"] == 0
+    assert "Good morning" not in client.get("/").get_data(as_text=True)
+    post("/profile/preferences", {"show_greeting": "1"})
+    assert "Good morning" in client.get("/").get_data(as_text=True)
+
+
+def test_editor_mode_is_remembered_per_account(client, post, add):
+    note_id = add("Note")
+    assert 'data-mode="write"' in client.get(f"/notes/{note_id}").get_data(as_text=True)
+    assert post("/profile/editor-mode", {"mode": "split"}).status_code == 204
+    assert 'id="panes" data-mode="split"' in client.get(f"/notes/{note_id}").get_data(as_text=True)
+    assert post("/profile/editor-mode", {"mode": "sideways"}).status_code == 400
+
+
 def test_demo_account_keeps_its_login(app, post, query):
     with app.app_context():
         db = get_db()

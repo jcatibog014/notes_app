@@ -16,6 +16,7 @@ from .validation import (
     APPEARANCES,
     AVATAR_CHOICES,
     DISPLAY_NAME_MAX,
+    EDITOR_MODES,
     PASSWORD_MIN,
     THEMES,
     USERNAME_MAX,
@@ -118,6 +119,29 @@ def change_password():
     db.commit()
     notify("Changed your password. Use the new one next time you log in.")
     return redirect(url_for("profile.index"))
+
+
+@bp.post("/profile/preferences")
+def change_preferences():
+    # A ticked checkbox sends its value. An unticked one sends nothing.
+    show_greeting = 1 if request.form.get("show_greeting") else 0
+    db = get_db()
+    db.execute("UPDATE users SET show_greeting = ? WHERE id = ?", (show_greeting, g.user["id"]))
+    db.commit()
+    notify("Saved your preferences.")
+    return redirect(url_for("profile.index") + "#preferences")
+
+
+@bp.post("/profile/editor-mode")
+def change_editor_mode():
+    """The editor remembers Write, Split or Preview for this account (sent by app.js)."""
+    mode = request.form.get("mode", "")
+    if mode not in EDITOR_MODES:
+        return "", 400
+    db = get_db()
+    db.execute("UPDATE users SET editor_mode = ? WHERE id = ?", (mode, g.user["id"]))
+    db.commit()
+    return "", 204
 
 
 @bp.post("/profile/theme")

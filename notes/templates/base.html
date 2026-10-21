@@ -1,6 +1,8 @@
 {% import "_macros.html" as ui with context %}
-{# The sidebar's views: (key, icon). Labels and SQL live in notes.VIEWS. #}
-{% set view_icons = [('all', 'notes'), ('pinned', 'pin'), ('archive', 'archive'), ('trash', 'trash')] %}
+{# The sidebar's views: (key, icon). Labels and SQL live in notes.VIEWS.
+   Archive and Trash are used less, so they sit in a "More" group. #}
+{% set view_icons = [('all', 'notes'), ('pinned', 'pin')] %}
+{% set more_icons = [('archive', 'archive'), ('trash', 'trash')] %}
 {% set current_view = request.args.get('view', 'all') if request.endpoint == 'notes.index' else None %}
 {% set current_tag = request.args.get('tag', '')|lower if request.endpoint == 'notes.index' else '' %}
 <!doctype html>
@@ -10,7 +12,9 @@
       data-appearance="{{ g.user.appearance if g.user else 'system' }}">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  {# resizes-content: when a phone's keyboard opens, the page shrinks above
+     it instead of the keyboard covering the bottom bar and the text box. #}
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
   {# app.js reads the CSRF token from here for the requests it sends. #}
   <meta name="csrf-token" content="{{ csrf_token() }}">
   <title>{% block title %}{% endblock %}Forget-Me-Note</title>
@@ -36,15 +40,21 @@
         {{ ui.icon('plus') }} New Note <kbd>N</kbd>
       </a>
 
+      {% macro view_link(key, icon_name) -%}
+        {% set active = current_view == key and not current_tag and not request.args.get('q') %}
+        <a class="side-link{% if active %} active{% endif %}" href="{{ url_for('notes.index', view=None if key == 'all' else key) }}"
+           {% if active %}aria-current="page"{% endif %}>
+          {{ ui.icon(icon_name) }}<span>{{ views[key][0] }}</span>
+          {% if view_counts[key] %}<span class="count">{{ view_counts[key] }}</span>{% endif %}
+        </a>
+      {%- endmacro %}
       <nav class="side-nav" aria-label="Views">
-        {% for key, icon_name in view_icons %}
-          {% set active = current_view == key and not current_tag and not request.args.get('q') %}
-          <a class="side-link{% if active %} active{% endif %}" href="{{ url_for('notes.index', view=None if key == 'all' else key) }}"
-             {% if active %}aria-current="page"{% endif %}>
-            {{ ui.icon(icon_name) }}<span>{{ views[key][0] }}</span>
-            {% if view_counts[key] %}<span class="count">{{ view_counts[key] }}</span>{% endif %}
-          </a>
-        {% endfor %}
+        {% for key, icon_name in view_icons %}{{ view_link(key, icon_name) }}{% endfor %}
+        {# <details> opens and closes with no JavaScript. It starts open on its own pages. #}
+        <details class="side-more" {% if current_view in ['archive', 'trash'] %}open{% endif %}>
+          <summary class="side-link">{{ ui.icon('more') }}<span>More</span>{{ ui.icon('chevron', 16) }}</summary>
+          {% for key, icon_name in more_icons %}{{ view_link(key, icon_name) }}{% endfor %}
+        </details>
       </nav>
 
       <div class="side-section">
@@ -116,18 +126,79 @@
     <a class="{% if request.endpoint == 'profile.index' %}active{% endif %}" href="{{ url_for('profile.index') }}">{{ ui.icon('user', 22) }}<span>Profile</span></a>
   </nav>
 
+  {# The shortcuts, grouped. The top ones show; the rest fold away under
+     "More shortcuts". The filter box (app.js) hides rows that don't match. #}
+  {% set shortcut_groups = [
+    ('Everywhere', [
+      ('<kbd>Ctrl</kbd> <kbd>K</kbd> or <kbd>/</kbd>', 'Search'),
+      ('<kbd>N</kbd> or <kbd>Alt</kbd> <kbd>N</kbd>', 'New note'),
+      ('<kbd>↓</kbd> <kbd>↑</kbd> then <kbd>Enter</kbd>', 'Move through notes and open one'),
+      ('<kbd>?</kbd>', 'This list'),
+    ]),
+    ('Writing', [
+      ('<kbd>Ctrl</kbd> <kbd>B</kbd> / <kbd>I</kbd>', 'Bold / italic'),
+      ('<kbd>Ctrl</kbd> <kbd>Z</kbd> / <kbd>Shift</kbd> <kbd>Z</kbd>', 'Undo / redo'),
+      ('<kbd>[[</kbd> or <kbd>#</kbd>', 'Link a note or add a tag'),
+      ('<kbd>Ctrl</kbd> <kbd>E</kbd>', 'Switch write / preview'),
+      ('<kbd>Ctrl</kbd> <kbd>Enter</kbd>', 'Save and close'),
+      ('<kbd>Esc</kbd>', 'Back to your notes'),
+    ]),
+  ] %}
+  {% set more_shortcuts = [
+    ('<kbd>Ctrl</kbd> <kbd>S</kbd>', 'Save now (notes also save as you type)'),
+    ('<kbd>Ctrl</kbd> <kbd>Shift</kbd> <kbd>F</kbd>', 'Focus mode'),
+    ('<kbd>Enter</kbd> in a list', 'Start the next item'),
+    ('<kbd>Ctrl</kbd> <kbd>Enter</kbd> in “Take a note”', 'Add the note'),
+  ] %}
   <div class="sheet" id="shortcuts" popover>
     <h2 class="sheet-title">Keyboard Shortcuts</h2>
-    <dl class="shortcut-list">
-      <div><dt><kbd>Ctrl</kbd> <kbd>K</kbd> or <kbd>/</kbd></dt><dd>Search</dd></div>
-      <div><dt><kbd>N</kbd> or <kbd>Alt</kbd> <kbd>N</kbd></dt><dd>New note</dd></div>
-      <div><dt><kbd>Ctrl</kbd> <kbd>S</kbd></dt><dd>Save now (notes also save as you type)</dd></div>
-      <div><dt><kbd>Ctrl</kbd> <kbd>B</kbd> / <kbd>I</kbd></dt><dd>Bold / italic in the editor</dd></div>
-      <div><dt><kbd>Ctrl</kbd> <kbd>E</kbd></dt><dd>Switch between write and preview</dd></div>
-      <div><dt><kbd>Esc</kbd></dt><dd>Back to your notes</dd></div>
-      <div><dt><kbd>?</kbd></dt><dd>This list</dd></div>
-    </dl>
+    <input class="sheet-filter" type="search" placeholder="Find a shortcut" aria-label="Find a shortcut" data-filter-rows>
+    {% for group, rows in shortcut_groups %}
+      <h3 class="shortcut-group">{{ group }}</h3>
+      <dl class="shortcut-list">
+        {% for keys, label in rows %}<div><dt>{{ keys|safe }}</dt><dd>{{ label }}</dd></div>{% endfor %}
+      </dl>
+    {% endfor %}
+    <details class="more-shortcuts">
+      <summary>More shortcuts</summary>
+      <dl class="shortcut-list">
+        {% for keys, label in more_shortcuts %}<div><dt>{{ keys|safe }}</dt><dd>{{ label }}</dd></div>{% endfor %}
+      </dl>
+    </details>
+    <form class="sheet-actions" method="post" action="{{ url_for('notes.welcome_again') }}">
+      {{ ui.csrf() }}
+      <button class="btn btn-ghost btn-small" type="submit">Take the Tour Again</button>
+    </form>
   </div>
+
+  {% if not g.user.onboarded %}
+    {# The welcome tour: shown once, until it's finished or skipped. app.js
+       opens it and walks through the slides. #}
+    <div class="sheet tour" id="tour" popover="manual" data-autostart aria-labelledby="tour-title">
+      {% set slides = [
+        ('Take a note', 'Type in “Take a note…” on the home page, or press <kbd>N</kbd> for the full editor. Notes save as you type.', 'notes'),
+        ('Tag it with #', 'Write <code>#work</code> anywhere in a note to tag it. Your tags gather in the sidebar, one click away.', 'tag'),
+        ('Link notes with [[ ]]', 'Type <code>[[</code> and pick another note to link to it. Each note lists the notes that link to it.', 'link'),
+        ('Find anything', 'Search with <kbd>Ctrl</kbd> <kbd>K</kbd>, use the filter chips, and press <kbd>?</kbd> for every shortcut.', 'search'),
+      ] %}
+      {% for title, text, icon_name in slides %}
+        <section class="tour-slide" data-slide="{{ loop.index0 }}" {% if not loop.first %}hidden{% endif %}>
+          <div class="tour-art" aria-hidden="true">{{ ui.flower(64) }}<span class="tour-icon">{{ ui.icon(icon_name, 28) }}</span></div>
+          <p class="eyebrow">Step {{ loop.index }} of {{ slides|length }}</p>
+          <h2 class="sheet-title" {% if loop.first %}id="tour-title"{% endif %}>{{ title }}</h2>
+          <p>{{ text|safe }}</p>
+        </section>
+      {% endfor %}
+      <div class="tour-dots" aria-hidden="true">{% for _ in slides %}<span></span>{% endfor %}</div>
+      <form class="sheet-actions" method="post" action="{{ url_for('notes.welcome_done', **keep) }}">
+        {{ ui.csrf() }}
+        <button class="btn btn-ghost" type="submit" data-tour-skip>Skip</button>
+        <button class="btn btn-ghost" type="button" data-tour-back hidden>Back</button>
+        <button class="btn btn-primary" type="button" data-tour-next>Next</button>
+        <button class="btn btn-primary" type="submit" data-tour-done hidden>Start Writing</button>
+      </form>
+    </div>
+  {% endif %}
 {% endif %}
 
   {# Messages saved with flash() show up once, on the next page, as toasts.
@@ -137,13 +208,18 @@
       {% if category == 'error' %}
         <p class="toast toast-error" role="alert">{{ message }}</p>
       {% elif category.startswith('undo:') %}
-        {# "undo:12" means: note 12 went to the Trash, and Undo restores it. #}
-        <div class="toast" role="status">
+        {# "undo:12,13" means: notes 12 and 13 went to the Trash, and Undo
+           restores them. It stays until dismissed or for a while (app.js),
+           and waits while the mouse or keyboard is on it. #}
+        <div class="toast toast-snackbar" role="status">
           <span>{{ message }}</span>
-          <form method="post" action="{{ url_for('notes.restore', note_id=category[5:]|int, **keep) }}">
+          <form method="post" action="{{ url_for('notes.bulk', **keep) }}">
             {{ ui.csrf() }}
+            <input type="hidden" name="action" value="restore">
+            {% for note_id in category[5:].split(',') %}<input type="hidden" name="ids" value="{{ note_id }}">{% endfor %}
             <button class="toast-undo" type="submit">Undo</button>
           </form>
+          <button class="toast-close" type="button" aria-label="Dismiss" data-dismiss>{{ ui.icon('x', 16) }}</button>
         </div>
       {% else %}
         <p class="toast" role="status">{{ message }}</p>

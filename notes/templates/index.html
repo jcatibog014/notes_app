@@ -13,23 +13,81 @@
       <p class="eyebrow">{{ 'Searching ' ~ heading if view != 'all' else 'Searching all notes' }}</p>
       <h1>Search</h1>
     {% elif view == 'all' %}
-      <p class="eyebrow">{{ greeting }} 🌼</p>
+      {% if greeting %}<p class="eyebrow">{{ greeting }} 🌼</p>{% endif %}
       <h1>Your Notes</h1>
     {% else %}
       <h1>{{ heading }}</h1>
     {% endif %}
+    {% if view in ['archive', 'trash'] %}
+      {# Phones have no sidebar, so Archive and Trash link to each other here. #}
+      <nav class="view-switch" aria-label="Put-away notes">
+        <a href="{{ url_for('notes.index', view='archive') }}" {% if view == 'archive' %}aria-current="page"{% endif %}>{{ ui.icon('archive', 16) }} Archive</a>
+        <a href="{{ url_for('notes.index', view='trash') }}" {% if view == 'trash' %}aria-current="page"{% endif %}>{{ ui.icon('trash', 16) }} Trash</a>
+      </nav>
+    {% endif %}
   </div>
   <div class="head-actions">
-    {% if view == 'trash' and notes %}
-      <form method="post" action="{{ url_for('notes.empty_trash') }}" data-confirm="Delete every note in the Trash forever?">
-        {{ ui.csrf() }}
-        <button class="btn btn-ghost danger" type="submit">{{ ui.icon('trash') }} Empty Trash</button>
-      </form>
-    {% elif view == 'all' %}
-      <button class="btn btn-ghost" type="button" popovertarget="import-sheet">{{ ui.icon('upload') }} Import</button>
+    {% if notes %}
+      {# Select mode needs JavaScript, so app.js un-hides this button. #}
+      <button class="btn btn-ghost" type="button" data-select-mode hidden>{{ ui.icon('checklist') }} Select</button>
+    {% endif %}
+    {% if view == 'trash' %}
+      {% if notes %}
+        <form method="post" action="{{ url_for('notes.empty_trash') }}" data-confirm="Delete all {{ notes|length }} notes in the Trash forever? This can't be undone.">
+          {{ ui.csrf() }}
+          <button class="btn btn-ghost danger" type="submit">{{ ui.icon('trash') }} Empty Trash</button>
+        </form>
+      {% endif %}
+    {% else %}
+      {% if not q %}
+        <button class="btn btn-ghost" type="button" popovertarget="sort-sheet">{{ ui.icon('sort') }} {{ sorts[sort][0] }}</button>
+      {% endif %}
+      {% if view == 'all' %}
+        <button class="btn btn-ghost" type="button" popovertarget="template-sheet">{{ ui.icon('notes') }} From Template</button>
+        <button class="icon-btn" type="button" popovertarget="list-menu" title="Import and export" aria-label="Import and export">{{ ui.icon('more') }}</button>
+      {% endif %}
     {% endif %}
   </div>
 </header>
+
+{# Filter chips: each one is a link to the same list with that filter
+   switched on or off, so the search syntax teaches itself. #}
+{% if view != 'trash' %}
+  <nav class="filter-row" aria-label="Filters">
+    <a class="chip chip-toggle{% if query.pinned %} is-on{% endif %}" href="{{ filter_url('is:pinned') }}"
+       {% if query.pinned %}aria-current="true"{% endif %}>{{ ui.icon('pin', 14) }} Pinned</a>
+    <a class="chip chip-toggle{% if query.checklist %} is-on{% endif %}" href="{{ filter_url('has:checklist') }}"
+       {% if query.checklist %}aria-current="true"{% endif %}>{{ ui.icon('checklist', 14) }} Has checklist</a>
+    <button class="chip chip-toggle{% if query.colors %} is-on{% endif %}" type="button" popovertarget="color-filter">
+      {{ ui.icon('palette', 14) }} Color{% if query.colors %}: {{ query.colors|join(', ') }}{% endif %} {{ ui.icon('chevron', 14) }}
+    </button>
+    {% if tags %}
+      <button class="chip chip-toggle{% if query.tags and not tag %} is-on{% endif %}" type="button" popovertarget="tag-filter">
+        {{ ui.icon('tag', 14) }} Tag {{ ui.icon('chevron', 14) }}
+      </button>
+    {% endif %}
+  </nav>
+  <div class="sheet" id="color-filter" popover>
+    <h2 class="sheet-title">Filter by Color</h2>
+    <div class="color-picker">
+      {% for key, label in note_colors.items() if key != 'default' %}
+        <a class="swatch note-{{ key }}" href="{{ filter_url('color:' ~ key) }}">
+          <span class="swatch-dot{% if key in query.colors %} is-on{% endif %}" aria-hidden="true"></span>
+          <span class="swatch-label">{{ label }}{% if key in query.colors %} ✓{% endif %}</span>
+        </a>
+      {% endfor %}
+    </div>
+  </div>
+  <div class="sheet" id="tag-filter" popover>
+    <h2 class="sheet-title">Filter by Tag</h2>
+    <div class="chips">
+      {% for name in tags %}
+        <a class="chip tag-{{ tag_color(name) }}{% if name in query.tags %} is-on{% endif %}" href="{{ filter_url('tag:' ~ name) }}">#{{ name }}{% if name in query.tags %} ✓{% endif %}</a>
+      {% endfor %}
+    </div>
+    <p class="hint"><a href="{{ url_for('tags.index') }}">Manage tags…</a></p>
+  </div>
+{% endif %}
 
 {% if view == 'all' and not q and not tag %}
   {# Quick capture: jot something down without leaving the page. #}
@@ -43,22 +101,32 @@
       <button class="btn btn-primary btn-small" type="submit">Add Note</button>
     </div>
   </form>
+
+  {% if recent %}
+    <nav class="recent" aria-labelledby="recent-title">
+      <h2 class="section-label" id="recent-title">Jump Back In</h2>
+      <div class="chips">
+        {% for note in recent %}
+          <a class="chip chip-note note-{{ note.color }}" href="{{ url_for('notes.edit', note_id=note.id) }}">{{ note.title or 'Untitled' }}</a>
+        {% endfor %}
+      </div>
+    </nav>
+  {% endif %}
 {% endif %}
 
 {% if q %}
   <div class="result-line" role="status">
     <p><strong>{{ notes|length }}</strong> {{ 'result' if notes|length == 1 else 'results' }} for “{{ q }}”
       {%- if view != 'all' %} in {{ heading }}{% endif %}</p>
-    {# Show how the search was understood, so the filters teach themselves. #}
-    <div class="chips">
-      {% for name in query.tags %}<span class="chip chip-filter">tag: {{ name }}</span>{% endfor %}
-      {% if query.pinned %}<span class="chip chip-filter">pinned</span>{% endif %}
-      {% for color in query.colors %}<span class="chip chip-filter">color: {{ color }}</span>{% endfor %}
-      {% if query.checklist %}<span class="chip chip-filter">has checklist</span>{% endif %}
-      {% for phrase in query.phrases %}<span class="chip chip-filter">“{{ phrase }}”</span>{% endfor %}
-    </div>
+    {% for phrase in query.phrases %}<span class="chip chip-filter">“{{ phrase }}”</span>{% endfor %}
     <a class="btn btn-ghost btn-small" href="{{ url_for('notes.index', view=None if view == 'all' else view, tag=tag) }}">Clear Search</a>
   </div>
+  {% for typed, fix, url in suggestions %}
+    <p class="did-you-mean" role="status">
+      “{{ typed }}” isn't a filter. Did you mean <a href="{{ url }}"><code>{{ fix }}</code></a>?
+      <span class="hint">Filters: <code>tag:</code> <code>is:pinned</code> <code>color:</code> <code>has:checklist</code></span>
+    </p>
+  {% endfor %}
 {% endif %}
 
 {% if view == 'trash' and notes %}
@@ -81,22 +149,70 @@
       <p>Try fewer words, or the start of a word: “bud” finds “budget”.</p>
     {% elif tag %}
       <h2>No notes tagged #{{ tag }}</h2>
-      <p><a href="{{ url_for('notes.new', tag=tag) }}">Write one</a>.</p>
+      <p>Write <code>#{{ tag }}</code> anywhere in a note, or <a href="{{ url_for('notes.new', tag=tag) }}">start one with this tag</a>.</p>
     {% elif view == 'trash' %}
       <h2>The Trash is empty</h2>
       <p>Deleted notes wait here for {{ trash_days }} days, in case you change your mind.</p>
     {% elif view == 'archive' %}
       <h2>Nothing archived</h2>
-      <p>Archive notes you want to keep but don't need to see every day.</p>
+      <p>Archive notes you want to keep but don't need to see every day. Search still finds them here.</p>
     {% elif view == 'pinned' %}
       <h2>No pinned notes</h2>
       <p>Pin the notes you use most, and they'll stay on top.</p>
     {% else %}
       <h2>Your first note is waiting</h2>
       <p>Jot something down above, or press <kbd>N</kbd> for the full editor.</p>
+      <ul class="tips">
+        <li>Type <code>#work</code> in a note to tag it.</li>
+        <li>Write <code>[[Another note]]</code> to link two notes.</li>
+        <li>Start a line with <code>- [ ]</code> for a checklist.</li>
+      </ul>
     {% endif %}
   </div>
 {% endif %}
+
+{# The selection bar: app.js shows it in select mode. The cards' checkboxes
+   belong to this form through form="bulk-form". #}
+<form class="bulk-bar" id="bulk-form" method="post" action="{{ url_for('notes.bulk', **keep) }}" hidden>
+  {{ ui.csrf() }}
+  <span class="bulk-count" aria-live="polite">0 selected</span>
+  {% if view == 'trash' %}
+    <button class="btn btn-small" type="submit" name="action" value="restore">{{ ui.icon('restore', 16) }} Restore</button>
+  {% else %}
+    <button class="btn btn-small" type="submit" name="action" value="pin">{{ ui.icon('pin', 16) }} Pin</button>
+    <button class="btn btn-small" type="submit" name="action" value="{{ 'unarchive' if view == 'archive' else 'archive' }}">
+      {{ ui.icon('archive', 16) }} {{ 'Unarchive' if view == 'archive' else 'Archive' }}
+    </button>
+    <span class="bulk-tag">
+      <input name="tag" type="text" placeholder="tag" aria-label="Tag to add" autocomplete="off">
+      <button class="btn btn-small" type="submit" name="action" value="tag">{{ ui.icon('tag', 16) }} Add Tag</button>
+    </span>
+    <button class="btn btn-small danger" type="submit" name="action" value="trash">{{ ui.icon('trash', 16) }} Trash</button>
+  {% endif %}
+  <button class="icon-btn" type="button" data-select-cancel aria-label="Stop selecting">{{ ui.icon('x') }}</button>
+</form>
+
+<div class="sheet menu" id="sort-sheet" popover>
+  <p class="sheet-title">Sort By</p>
+  {% for key, (label, _) in sorts.items() %}
+    <a class="menu-item{% if key == sort %} is-on{% endif %}" href="{{ url_for('notes.index', **dict(keep, sort=None if key == 'updated' else key)) }}"
+       {% if key == sort %}aria-current="true"{% endif %}>{{ label }}{% if key == sort %} ✓{% endif %}</a>
+  {% endfor %}
+  <p class="hint menu-hint">Pinned notes always stay on top.</p>
+</div>
+
+<div class="sheet menu" id="template-sheet" popover>
+  <p class="sheet-title">New from Template</p>
+  {% for key, template in templates.items() %}
+    <a class="menu-item" href="{{ url_for('notes.new', template=key) }}">{{ ui.icon(template.icon) }} {{ template.label }}</a>
+  {% endfor %}
+</div>
+
+<div class="sheet menu" id="list-menu" popover>
+  <p class="sheet-title">Import &amp; Export</p>
+  <button class="menu-item" type="button" popovertarget="import-sheet">{{ ui.icon('upload') }} Import .md Files</button>
+  <a class="menu-item" href="{{ url_for('notes.export_all') }}">{{ ui.icon('download') }} Export All as .zip</a>
+</div>
 
 <div class="sheet" id="import-sheet" popover>
   <form method="post" action="{{ url_for('notes.import_notes') }}" enctype="multipart/form-data">

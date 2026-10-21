@@ -21,7 +21,8 @@ def test_parse_query():
 
 
 def test_fts_expression_quotes_everything():
-    assert fts_expression(parse_query('bud say"hi" "two words"')) == '"bud"* "say""hi"""* "two words"'
+    assert fts_expression(parse_query('bud say"hi" "two words"')) == (
+        '("bud" OR "bud"*) AND ("say""hi""" OR "say""hi"""*) AND "two words"')
 
 
 def test_finds_words_and_word_starts(client, add):
@@ -31,6 +32,20 @@ def test_finds_words_and_word_starts(client, add):
     assert titles(client, "/?q=bud") == ["Monthly <mark>budget</mark>"]   # still typing
     assert titles(client, "/?q=food rent") == ["Monthly budget"]          # all words, any order
     assert titles(client, "/?q=running") == []
+
+
+def test_exact_words_rank_before_word_starts(client, add):
+    add("Plans", body="the budget for this year", updated_at="2026-10-20 08:59:00")
+    add("Tiny", body="a bud on the rose", updated_at="2026-01-01 00:00:00")
+    assert titles(client, "/?q=bud") == ["Tiny", "Plans"]
+
+
+def test_suggestions_for_mistyped_filters():
+    assert parse_query("tags:work")["suggestions"] == [("tags:work", "tag:work")]
+    assert parse_query("is:pin")["suggestions"] == [("is:pin", "is:pinned")]
+    assert parse_query("color:purpel")["suggestions"] == [("color:purpel", "color:purple")]
+    assert parse_query("colour:blue")["suggestions"] == [("colour:blue", "color:blue")]
+    assert parse_query("10:30 http://x.com plain")["suggestions"] == []
 
 
 def test_word_endings_match(client, add):
