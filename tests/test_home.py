@@ -166,13 +166,15 @@ def test_editor_marks_tags_from_the_text(client, add):
     assert 'data-text-tags="cats,dogs"' in html
 
 
-def test_browser_tab_titles(client, add):
-    """The home page's tab says just the app's name; other pages say where you are first."""
-    add("Note", tags=["work"])
-    title = lambda url: re.search(r"<title>(.*?)</title>", client.get(url).get_data(as_text=True)).group(1)
-    assert title("/") == "Forget-Me-Note"
-    assert title("/?view=archive") == "Archive · Forget-Me-Note"
-    assert title("/?tag=work") == "#work · Forget-Me-Note"
-    assert title("/?q=note") == "Search · Forget-Me-Note"
+def test_browser_tab_titles(app, client, add):
+    """Every page's browser tab says just the app's name, next to the app icon."""
+    guest_client = app.test_client()  # a second browser, logged out, for the log-in pages
+    note_id = add("Note", tags=["work"])
+    pages = ["/", "/?view=archive", "/?view=trash", "/?tag=work", "/?q=note", f"/notes/{note_id}",
+             "/notes/new", "/tags", "/profile", "/notes/999"]
+    for url in pages:
+        assert re.findall(r"<title>(.*?)</title>", client.get(url).get_data(as_text=True)) == ["Forget-Me-Note"], url
+    for url in ["/login", "/register"]:
+        assert re.findall(r"<title>(.*?)</title>", guest_client.get(url).get_data(as_text=True)) == ["Forget-Me-Note"], url
     html = client.get("/").get_data(as_text=True)
     assert '<meta name="apple-mobile-web-app-title" content="Forget-Me-Note">' in html

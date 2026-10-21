@@ -1,9 +1,6 @@
 {% extends "base.html" %}
 {% import "_macros.html" as ui with context %}
 
-{# The home page is just "Forget-Me-Note" in the browser tab; other lists say where you are first. #}
-{% block title %}{% if tag %}#{{ tag }} · {% elif q %}Search · {% elif view != 'all' %}{{ heading }} · {% endif %}{% endblock %}
-
 {% block content %}
 <header class="page-head">
   <div>

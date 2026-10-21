@@ -1,7 +1,6 @@
 {% extends "base.html" %}
 {% import "_macros.html" as ui with context %}
 
-{% block title %}{% if note %}{{ note.title or 'Untitled' }}{% else %}New Note{% endif %} · {% endblock %}
 
 {% set in_trash = note and note.deleted_at %}
 {% set color = form.get('color') or 'default' %}
