@@ -164,3 +164,15 @@ def test_editor_marks_tags_from_the_text(client, add):
     html = client.get(f"/notes/{note_id}").get_data(as_text=True)
     assert 'value="pets"' in html
     assert 'data-text-tags="cats,dogs"' in html
+
+
+def test_browser_tab_titles(client, add):
+    """The home page's tab says just the app's name; other pages say where you are first."""
+    add("Note", tags=["work"])
+    title = lambda url: re.search(r"<title>(.*?)</title>", client.get(url).get_data(as_text=True)).group(1)
+    assert title("/") == "Forget-Me-Note"
+    assert title("/?view=archive") == "Archive · Forget-Me-Note"
+    assert title("/?tag=work") == "#work · Forget-Me-Note"
+    assert title("/?q=note") == "Search · Forget-Me-Note"
+    html = client.get("/").get_data(as_text=True)
+    assert '<meta name="apple-mobile-web-app-title" content="Forget-Me-Note">' in html
