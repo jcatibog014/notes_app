@@ -40,7 +40,7 @@
       {% endif %}
     {% else %}
       {% if not q %}
-        <button class="btn btn-ghost" type="button" popovertarget="sort-sheet">{{ ui.icon('sort') }} {{ sorts[sort][0] }}</button>
+        <button class="btn btn-ghost" type="button" popovertarget="sort-sheet">{{ ui.icon('sort') }} <span data-sort-label>{{ sorts[sort][0] }}</span></button>
       {% endif %}
       {% if view == 'all' %}
         <button class="btn btn-ghost" type="button" popovertarget="template-sheet">{{ ui.icon('notes') }} From Template</button>
@@ -133,15 +133,30 @@
   <p class="hint trash-hint">Notes in the Trash are deleted for good after {{ trash_days }} days.</p>
 {% endif %}
 
-{% if pinned %}
-  <h2 class="section-label">{{ ui.icon('pin', 14) }} Pinned</h2>
-  <div class="masonry">{% for note in pinned %}{{ ui.note_card(note, view) }}{% endfor %}</div>
-  {% if others %}<h2 class="section-label">Others</h2>{% endif %}
-{% endif %}
+{#
+  The cards. With data-reorder-url, app.js lets you drag them into your
+  own order (or onto the sidebar). Each .masonry is a section: dragging a
+  card from "pinned" to "others" unpins it, and the other way pins it.
+  Empty sections are in the page but hidden (style.css), so a card dragged
+  out of one leaves the heading in step (app.js updates data-empty).
+#}
+{% set split = view == 'all' and not q %}
+<div class="notes-board"
+     {% if can_drag and notes %}data-reorder-url="{{ url_for('notes.reorder') }}"{% endif %}
+     data-bulk-url="{{ url_for('notes.bulk', **keep) }}">
+  {% if split %}
+    <h2 class="section-label" {% if not pinned %}data-empty{% endif %}>{{ ui.icon('pin', 14) }} Pinned</h2>
+    <div class="masonry" data-section="pinned">{% for note in pinned %}{{ ui.note_card(note, view) }}{% endfor %}</div>
+    <h2 class="section-label" {% if not (pinned and others) %}data-empty{% endif %}>Others</h2>
+    <div class="masonry" data-section="others">{% for note in others %}{{ ui.note_card(note, view) }}{% endfor %}</div>
+  {% elif notes %}
+    <div class="masonry" data-section="{{ 'pinned' if view == 'pinned' else 'others' }}">{% for note in notes %}{{ ui.note_card(note, view) }}{% endfor %}</div>
+  {% endif %}
+  {# Tells screen readers where a note moved (keyboard moves: Alt + arrows). #}
+  <p class="visually-hidden" id="drag-status" aria-live="polite"></p>
+</div>
 
-{% if others %}
-  <div class="masonry">{% for note in others %}{{ ui.note_card(note, view) }}{% endfor %}</div>
-{% elif not pinned %}
+{% if not notes %}
   <div class="empty">
     {{ ui.flower() }}
     {% if q %}
@@ -184,7 +199,7 @@
       {{ ui.icon('archive', 16) }} {{ 'Unarchive' if view == 'archive' else 'Archive' }}
     </button>
     <span class="bulk-tag">
-      <input name="tag" type="text" placeholder="tag" aria-label="Tag to add" autocomplete="off">
+      <input name="add_tag" type="text" placeholder="tag" aria-label="Tag to add" autocomplete="off">
       <button class="btn btn-small" type="submit" name="action" value="tag">{{ ui.icon('tag', 16) }} Add Tag</button>
     </span>
     <button class="btn btn-small danger" type="submit" name="action" value="trash">{{ ui.icon('trash', 16) }} Trash</button>
@@ -194,11 +209,15 @@
 
 <div class="sheet menu" id="sort-sheet" popover>
   <p class="sheet-title">Sort By</p>
-  {% for key, (label, _) in sorts.items() %}
-    <a class="menu-item{% if key == sort %} is-on{% endif %}" href="{{ url_for('notes.index', **dict(keep, sort=None if key == 'updated' else key)) }}"
-       {% if key == sort %}aria-current="true"{% endif %}>{{ label }}{% if key == sort %} ✓{% endif %}</a>
-  {% endfor %}
-  <p class="hint menu-hint">Pinned notes always stay on top.</p>
+  {# Each choice is saved for the account, so it's a POST form, not a link. #}
+  <form method="post" action="{{ url_for('notes.change_sort', **keep) }}">
+    {{ ui.csrf() }}
+    {% for key, (label, _) in sorts.items() %}
+      <button class="menu-item{% if key == sort %} is-on{% endif %}" type="submit" name="sort" value="{{ key }}"
+              {% if key == sort %}aria-current="true"{% endif %}>{{ label }}{% if key == sort %} ✓{% endif %}</button>
+    {% endfor %}
+  </form>
+  <p class="hint menu-hint">Drag cards to arrange them in your own order (with the keyboard: <kbd>Alt</kbd> + arrows). Pinned notes always stay on top.</p>
 </div>
 
 <div class="sheet menu" id="template-sheet" popover>

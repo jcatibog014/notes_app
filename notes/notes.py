@@ -50,9 +50,10 @@ TEMPLATES = {
              "body": "**The idea:** \n\n**Why it matters:** \n\n**Next step:**\n- [ ] \n\n#ideas"},
 }
 
-# What the selection bar can do to many notes at once: action -> SQL SET.
+# What the selection bar (and dropping a card on the sidebar) can do to
+# many notes at once: action -> SQL SET. Pinning an archived note brings it back.
 BULK_ACTIONS = {
-    "pin": "pinned = 1",
+    "pin": "pinned = 1, archived = 0",
     "unpin": "pinned = 0",
     "archive": "archived = 1, pinned = 0",
     "unarchive": "archived = 0",
@@ -342,7 +343,8 @@ def index():
         view = "all"
     q = request.args.get("q", "").strip()
     tag = request.args.get("tag", "").strip().lower() or None
-    sort = request.args.get("sort", "updated")
+    # The sort saved for the account, unless a link asks for another one.
+    sort = request.args.get("sort") or g.user["note_sort"]
     if sort not in SORTS:
         sort = "updated"
     if view == "trash":
@@ -377,6 +379,9 @@ def index():
     return render_template(
         "index.html", view=view, heading=heading, q=q, tag=tag, query=query, sort=sort, sorts=SORTS,
         suggestions=suggestions,
+        # Cards can be dragged into a custom order in the plain lists, not in
+        # search results (sorted by best match), a tag's page, or the Trash.
+        can_drag=view in ("all", "pinned", "archive") and not q and not tag,
         notes=notes, pinned=pinned, others=others, recent=recent, templates=TEMPLATES,
         greeting=greeting() if g.user["show_greeting"] else None, trash_days=TRASH_DAYS,
         tags=[row["name"] for row in tag_counts(get_db(), g.user["id"]) if row["count"]],
@@ -671,7 +676,9 @@ def bulk():
         db.execute(f"UPDATE notes SET deleted_at = ?, pinned = 0 WHERE id IN ({marks})", [timestamp(), *ids])
         notify(f"Moved {count} to the Trash.", "undo:" + ",".join(map(str, ids)))
     elif action == "tag":
-        names = parse_tags(request.form.get("tag", ""))
+        # The field is "add_tag", not "tag": "tag" is the tag filter that
+        # list_args() keeps, so it would send you to that tag's page after.
+        names = parse_tags(request.form.get("add_tag", ""))
         if not names or tags_error(names):
             notify("Type a tag to add, like “work”.", "error")
             return go_back()
@@ -682,6 +689,50 @@ def bulk():
     else:
         abort(400, "Pick something to do with the selected notes.")
     db.commit()
+    return go_back()
+
+
+@bp.post("/notes/sort")
+def change_sort():
+    """The Sort menu: remember the choice for this account."""
+    sort = request.form.get("sort", "")
+    if sort not in SORTS:
+        abort(400, "Pick one of the ways to sort.")
+    db = get_db()
+    db.execute("UPDATE users SET note_sort = ? WHERE id = ?", (sort, g.user["id"]))
+    db.commit()
+    args = list_args()
+    args.pop("sort", None)  # the saved choice applies from now on
+    return redirect(url_for("notes.index", **args))
+
+
+@bp.post("/notes/reorder")
+def reorder():
+    """Save the order of the cards after a drag.
+
+    The form has two lists of note ids, top to bottom: "pinned" and
+    "others". Each note's place in its list becomes its position, and a
+    note dragged from one list to the other gets pinned or unpinned.
+    Ids that aren't the user's (or are in the Trash) are left out. The
+    account switches to "Custom order", so the new order is what it sees.
+    """
+    db = get_db()
+    owned = {row["id"]: row["archived"] for row in db.execute(
+        "SELECT id, archived FROM notes WHERE user_id = ? AND deleted_at IS NULL", (g.user["id"],)
+    )}
+    seen = set()
+    for section, pinned in [("pinned", 1), ("others", 0)]:
+        ids = [int(value) for value in request.form.getlist(section) if value.isdigit()]
+        ids = [note_id for note_id in ids if note_id in owned and note_id not in seen]
+        seen.update(ids)
+        for position, note_id in enumerate(ids):
+            # An archived note can't be pinned, so it keeps pinned = 0.
+            db.execute("UPDATE notes SET position = ?, pinned = ? WHERE id = ?",
+                       (position, int(pinned and not owned[note_id]), note_id))
+    db.execute("UPDATE users SET note_sort = 'custom' WHERE id = ?", (g.user["id"],))
+    db.commit()
+    if is_fetch():
+        return jsonify(sort="custom", label=SORTS["custom"][0], saved=len(seen))
     return go_back()
 
 

@@ -1219,6 +1219,55 @@ mark { padding: 0 2px; border-radius: 4px; background: var(--mark); color: inher
   font: inherit;
 }
 
+/* ---------- Drag and drop ---------- */
+
+/* Cards that can be dragged show a grab hand. Their text isn't selectable,
+   so dragging moves the card instead of highlighting words. */
+.notes-board[data-reorder-url] .note-card { cursor: grab; user-select: none; -webkit-user-select: none; }
+.notes-board[data-reorder-url] .card-link { -webkit-touch-callout: none; -webkit-user-drag: none; }
+body.is-dragging, body.is-dragging * { cursor: grabbing !important; }
+body.is-dragging .note-card:hover { transform: none; }
+
+/* The card's spot in the grid while it's being dragged. */
+.note-card.is-placeholder {
+  opacity: 0.35;
+  outline: 2px dashed var(--accent);
+  outline-offset: -2px;
+  box-shadow: none;
+}
+
+/* The copy that follows the pointer. */
+.drag-ghost {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 80;
+  margin: 0;
+  pointer-events: none;
+  opacity: 0.96;
+  box-shadow: var(--shadow-big);
+  rotate: 2deg;
+  scale: 1.03;
+  transition: scale 0.15s ease, opacity 0.15s ease;
+}
+.drag-ghost.is-over-target { scale: 0.4; opacity: 0.75; }
+@media (prefers-reduced-motion: reduce) { .drag-ghost { rotate: none; scale: none; transition: none; } }
+
+/* Empty sections (and their headings) stay hidden. Nothing appears or
+   collapses while dragging, so the cards never jump away from the pointer.
+   To pin the first note, drop it on "Pinned" in the sidebar. */
+.section-label[data-empty] { display: none; }
+.masonry[data-section]:empty { display: none; }
+
+/* Sidebar links you can drop a card on. */
+body.is-dragging [data-drop] { outline: 1px dashed var(--border); outline-offset: -1px; }
+[data-drop].is-drop-target {
+  background: color-mix(in srgb, var(--accent) 18%, var(--surface));
+  color: var(--accent-strong);
+  outline: 2px dashed var(--accent);
+  outline-offset: -2px;
+}
+
 /* ---------- Trash, tags review, profile preferences ---------- */
 
 .purge-in.is-soon { color: var(--danger); font-weight: 600; }

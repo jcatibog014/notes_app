@@ -36,7 +36,8 @@ Your notes as a grid of pastel cards. Pinned notes stay on top, checklists show 
 - **Full-text search** with SQLite's FTS5: the best matches come first (exact words before word starts), matches are highlighted, and `bud` already finds `budget` while you type. **Filter chips** under the heading (Pinned, Has checklist, Color, Tag) switch filters on and off, and a mistyped filter like `tags:work` gets a "Did you mean `tag:work`?" (Without FTS5, a simpler search does the same job.)
 - **Suggestions while typing**: type `[[` to pick a note to link, or `#` to pick a tag.
 - **Links between notes**: `[[Note title]]`. A link to a note that doesn't exist yet offers to create it, and every note lists the notes that link to it (**Linked From**, with a count, folds away).
-- **Sort** by last edited, date created or title (pinned notes stay on top), and **Jump Back In** to the notes you opened last.
+- **Drag and drop**: drag cards into your own order (it's saved), between **Pinned** and **Others** to pin or unpin, or onto the sidebar's **Pinned**, **Archive**, **Trash** or a **tag**. Works with a mouse, with a finger (press and hold, then drag), and with the keyboard (`Alt ↑` / `Alt ↓`). `Esc` cancels a drag.
+- **Sort** in your own **custom order**, or by last edited, date created or title (pinned notes stay on top). Your choice is remembered. **Jump Back In** to the notes you opened last.
 - **Templates**: start a checklist, meeting notes, a daily journal or an idea from **From Template**.
 - **Select mode**: pin, archive, tag or trash many notes at once.
 - **Focus mode** (`Ctrl Shift F`): just you and the note.

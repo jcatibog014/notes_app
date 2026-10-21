@@ -259,7 +259,7 @@ document.addEventListener("keydown", (event) => {
     document.getElementById("shortcuts")?.showPopover();
   } else if (event.key === "Escape" && event.target === searchBox && searchBox.value) {
     searchBox.value = "";
-  } else if (["ArrowDown", "ArrowUp", "ArrowLeft", "ArrowRight"].includes(event.key)) {
+  } else if (!event.altKey && ["ArrowDown", "ArrowUp", "ArrowLeft", "ArrowRight"].includes(event.key)) {
     // Arrow keys move through the notes; Enter opens the one with focus.
     const links = cardLinks();
     if (!links.length || openSheet()) return;
@@ -347,6 +347,258 @@ if (selectButton && bulkForm) {
   });
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape" && document.body.classList.contains("selecting") && !openSheet()) setSelecting(false);
+  });
+}
+
+// ---------- Drag and drop ----------
+
+const board = document.querySelector(".notes-board[data-reorder-url]");
+if (board) setUpDragging(board);
+
+/**
+ * Drag cards into your own order, between Pinned and Others, or onto the
+ * sidebar (Pinned, Archive, Trash, a tag).
+ *
+ * It uses Pointer Events, so one piece of code works for a mouse, a finger
+ * and a pen. With a mouse, a drag starts after moving a few pixels; with a
+ * finger, after a short press and hold, so a quick swipe still scrolls
+ * the page. The card itself stays in the grid as a dashed placeholder that
+ * moves to where it would land, and a copy (the "ghost") follows the pointer.
+ */
+function setUpDragging(board) {
+  const status = document.getElementById("drag-status");
+  const idOf = (card) => card.querySelector(".card-select input").value;
+  const titleOf = (card) => card.querySelector(".card-link .visually-hidden").textContent.replace(/^Open /, "");
+  let drag = null;
+  let ignoreClicksUntil = 0;
+
+  // Links are draggable by the browser itself, which would fight with ours.
+  board.querySelectorAll(".card-link").forEach((link) => { link.draggable = false; });
+
+  /** Send the order of every section to the server. */
+  async function saveOrder() {
+    const form = new FormData();
+    board.querySelectorAll(".masonry[data-section]").forEach((section) => {
+      section.querySelectorAll(":scope > .note-card").forEach((card) => form.append(section.dataset.section, idOf(card)));
+    });
+    const response = await post(board.dataset.reorderUrl, form).catch(() => null);
+    if (!response || !response.ok) {
+      toast("Couldn't save the new order. Reload the page and try again.", true);
+      return false;
+    }
+    const result = await response.json();
+    const label = document.querySelector("[data-sort-label]");
+    if (label) label.textContent = result.label; // the list is now in "Custom order"
+    return true;
+  }
+  const saveSoon = debounce(saveOrder, 500);
+
+  /** Say where a note went, for screen readers (and keep the section headings right). */
+  function announce(card, message) {
+    const cards = [...card.parentElement.querySelectorAll(":scope > .note-card")];
+    const where = card.parentElement.dataset.section === "pinned" ? "Pinned" : "your notes";
+    status.textContent = message || `Moved “${titleOf(card)}” to place ${cards.indexOf(card) + 1} of ${cards.length} in ${where}.`;
+    const pinned = board.querySelector('.masonry[data-section="pinned"]');
+    const others = board.querySelector('.masonry[data-section="others"]');
+    if (pinned && others) {
+      pinned.previousElementSibling.toggleAttribute("data-empty", !pinned.children.length);
+      others.previousElementSibling.toggleAttribute("data-empty", !(pinned.children.length && others.children.length));
+    }
+  }
+
+  board.addEventListener("pointerdown", (event) => {
+    if (event.button !== 0 || drag || document.body.classList.contains("selecting")) return;
+    const card = event.target.closest(".note-card");
+    // Buttons, checkboxes, tags and links inside the card do their own thing.
+    if (!card || event.target.closest("button, input, label, form, .chip, a:not(.card-link)")) return;
+    drag = {
+      card,
+      pointerId: event.pointerId,
+      touch: event.pointerType !== "mouse",
+      startX: event.clientX, startY: event.clientY, x: event.clientX, y: event.clientY,
+      home: [card.parentElement, card.nextElementSibling], // to put it back if the drag is cancelled
+      started: false,
+    };
+    if (drag.touch) drag.timer = setTimeout(begin, 350); // press and hold
+  });
+
+  document.addEventListener("pointermove", (event) => {
+    if (!drag || event.pointerId !== drag.pointerId) return;
+    drag.x = event.clientX;
+    drag.y = event.clientY;
+    if (!drag.started) {
+      const distance = Math.hypot(drag.x - drag.startX, drag.y - drag.startY);
+      if (drag.touch) {
+        if (distance > 10) { clearTimeout(drag.timer); drag = null; } // a swipe: let the page scroll
+        return;
+      }
+      if (distance < 6) return; // still just a click
+      begin();
+    }
+    follow();
+  });
+  // While a finger is dragging a card, the page mustn't scroll instead.
+  document.addEventListener("touchmove", (event) => { if (drag?.started) event.preventDefault(); }, { passive: false });
+  // A long press would open the browser's link menu: not on a card being dragged.
+  board.addEventListener("contextmenu", (event) => { if (drag) event.preventDefault(); });
+  document.addEventListener("pointerup", (event) => { if (drag && event.pointerId === drag.pointerId) finish(true); });
+  document.addEventListener("pointercancel", (event) => { if (drag && event.pointerId === drag.pointerId) finish(false); });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && drag?.started) { event.preventDefault(); finish(false); }
+  });
+  // The click at the end of a drag mustn't open the note.
+  board.addEventListener("click", (event) => {
+    if (performance.now() < ignoreClicksUntil) { event.preventDefault(); event.stopPropagation(); }
+  }, true);
+
+  function begin() {
+    const { card } = drag;
+    clearTimeout(drag.timer);
+    drag.started = true;
+    drag.lastMove = 0;
+    const box = card.getBoundingClientRect();
+    drag.offsetX = drag.x - box.left;
+    drag.offsetY = drag.y - box.top;
+    // The ghost: a look-alike of the card that follows the pointer.
+    const ghost = card.cloneNode(true);
+    ghost.classList.add("drag-ghost");
+    ghost.setAttribute("aria-hidden", "true");
+    ghost.querySelectorAll("[id], [form]").forEach((element) => { element.removeAttribute("id"); element.removeAttribute("form"); });
+    ghost.style.width = `${box.width}px`;
+    // Shrinking (over a sidebar link) happens around the pointer, so the card stays under it.
+    ghost.style.transformOrigin = `${drag.offsetX}px ${drag.offsetY}px`;
+    document.body.append(ghost);
+    drag.ghost = ghost;
+    card.classList.add("is-placeholder");
+    document.body.classList.add("is-dragging");
+    // Keep the card's own section at its height until the drop: if the card
+    // leaves it empty, it mustn't collapse and pull the cards below upward.
+    const home = drag.home[0];
+    home.style.minHeight = `${home.getBoundingClientRect().height}px`;
+    window.getSelection()?.removeAllRanges();
+    // Archive and Trash live under "More" in the sidebar: open it so they can be dropped on.
+    const more = document.querySelector(".side-more");
+    if (more && !more.open) { more.open = true; drag.openedMore = more; }
+    // A tiny buzz on phones. Browsers only allow it after a tap on the page.
+    if (drag.touch && navigator.userActivation?.hasBeenActive) navigator.vibrate?.(15);
+    follow();
+  }
+
+  function follow() {
+    const { ghost, x, y, card } = drag;
+    // The "translate" property, not "transform": CSS applies it after "scale",
+    // so shrinking the ghost doesn't also shrink how far it has moved.
+    ghost.style.translate = `${x - drag.offsetX}px ${y - drag.offsetY}px`;
+    scrollNearEdges(y);
+    // The ghost ignores the pointer (pointer-events: none), so this finds what's under it.
+    const under = document.elementFromPoint(x, y);
+    const target = under?.closest("[data-drop]") || null;
+    if (target !== drag.target) {
+      drag.target?.classList.remove("is-drop-target");
+      target?.classList.add("is-drop-target");
+      // Over a sidebar link, the ghost shrinks so the link it's about to land on shows.
+      ghost.classList.toggle("is-over-target", !!target);
+      drag.target = target;
+    }
+    if (target) return;
+    // Moving cards shifts the columns around; waiting a moment between
+    // moves stops a card from flickering back and forth.
+    if (performance.now() - drag.lastMove < 90) return;
+    const over = under?.closest(".note-card");
+    const section = under?.closest(".masonry[data-section]");
+    if (over && over !== card && board.contains(over)) {
+      const box = over.getBoundingClientRect();
+      const after = y > box.top + box.height / 2;
+      const spot = after ? over.nextElementSibling : over;
+      if (spot !== card && (after ? over.nextElementSibling : over.previousElementSibling) !== card) {
+        over.parentElement.insertBefore(card, spot);
+        drag.lastMove = performance.now();
+      }
+    } else if (section && !over && board.contains(section) && section.lastElementChild !== card) {
+      section.append(card); // over the empty part of a section: go to its end
+      drag.lastMove = performance.now();
+    }
+  }
+
+  function scrollNearEdges(y) {
+    cancelAnimationFrame(drag.scrollFrame);
+    const edge = 70;
+    const speed = y < edge ? -(edge - y) / 4 : y > innerHeight - edge ? (y - innerHeight + edge) / 4 : 0;
+    if (!speed) return;
+    const step = () => {
+      if (!drag?.started) return;
+      window.scrollBy(0, speed);
+      drag.scrollFrame = requestAnimationFrame(step);
+    };
+    drag.scrollFrame = requestAnimationFrame(step);
+  }
+
+  async function finish(dropped) {
+    const current = drag;
+    drag = null;
+    clearTimeout(current.timer);
+    if (!current.started) return; // it was a click, not a drag
+    cancelAnimationFrame(current.scrollFrame);
+    ignoreClicksUntil = performance.now() + 400;
+    current.ghost.remove();
+    current.home[0].style.minHeight = "";
+    current.card.classList.remove("is-placeholder");
+    document.body.classList.remove("is-dragging");
+    current.target?.classList.remove("is-drop-target");
+    if (current.openedMore && !current.target) current.openedMore.open = false;
+
+    const [homeParent, homeNext] = current.home;
+    const putBack = () => homeParent.insertBefore(current.card, homeNext?.parentElement === homeParent ? homeNext : null);
+    if (!dropped) {
+      putBack();
+      status.textContent = "Move cancelled.";
+      return;
+    }
+    if (current.target) {
+      putBack();
+      return dropOn(current.target.dataset.drop, current.card);
+    }
+    if (current.card.parentElement === homeParent && current.card.nextElementSibling === homeNext) return; // back where it started
+    const changedSection = current.card.parentElement !== homeParent;
+    announce(current.card);
+    current.card.querySelector(".card-link").focus({ preventScroll: true });
+    // Pinning or unpinning changes the card's buttons, so reload to show them right.
+    if (await saveOrder() && changedSection) location.reload();
+  }
+
+  /** Dropped on the sidebar: do that action, as a normal form, so its message (and Undo) shows. */
+  function dropOn(action, card) {
+    const fields = { csrf_token: csrfToken, ids: idOf(card), action };
+    if (action.startsWith("tag:")) Object.assign(fields, { action: "tag", add_tag: action.slice(4) });
+    const form = document.createElement("form");
+    form.method = "post";
+    form.action = board.dataset.bulkUrl;
+    for (const [name, value] of Object.entries(fields)) {
+      const input = document.createElement("input");
+      input.type = "hidden";
+      input.name = name;
+      input.value = value;
+      form.append(input);
+    }
+    document.body.append(form);
+    form.submit();
+  }
+
+  // The keyboard way: Alt + ↑ / ↓ moves the card with focus.
+  board.addEventListener("keydown", (event) => {
+    if (!event.altKey || !["ArrowUp", "ArrowDown"].includes(event.key) || !event.target.matches(".card-link")) return;
+    event.preventDefault();
+    const card = event.target.closest(".note-card");
+    const up = event.key === "ArrowUp";
+    const neighbour = up ? card.previousElementSibling : card.nextElementSibling;
+    if (!neighbour) {
+      announce(card, `“${titleOf(card)}” is already ${up ? "first" : "last"}.`);
+      return;
+    }
+    card.parentElement.insertBefore(card, up ? neighbour : neighbour.nextElementSibling);
+    event.target.focus();
+    announce(card);
+    saveSoon();
   });
 }
 

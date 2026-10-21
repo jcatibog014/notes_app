@@ -78,7 +78,7 @@ def test_bulk_pin_archive_and_tag(post, add, fetch, tags_of):
     b = add("B", tags=["old"])
     post("/notes/bulk", {"action": "pin", "ids": [str(a), str(b)]})
     assert fetch(a)["pinned"] == fetch(b)["pinned"] == 1
-    post("/notes/bulk", {"action": "tag", "tag": "#Work", "ids": [str(a), str(b)]})
+    post("/notes/bulk", {"action": "tag", "add_tag": "#Work", "ids": [str(a), str(b)]})
     assert tags_of(a) == ["work"] and tags_of(b) == ["old", "work"]
     post("/notes/bulk", {"action": "archive", "ids": [str(a)]})
     assert fetch(a)["archived"] == 1 and fetch(a)["pinned"] == 0
@@ -106,7 +106,7 @@ def test_bulk_needs_notes_and_an_action(client, post, add):
     post("/notes/bulk", {"action": "pin"})
     assert "Select some notes first." in client.get("/").get_data(as_text=True)
     assert post("/notes/bulk", {"action": "explode", "ids": [str(note_id)]}).status_code == 400
-    post("/notes/bulk", {"action": "tag", "tag": "", "ids": [str(note_id)]})
+    post("/notes/bulk", {"action": "tag", "add_tag": "", "ids": [str(note_id)]})
     assert "Type a tag to add" in client.get("/").get_data(as_text=True)
 
 
