@@ -39,6 +39,15 @@ THEMES = {
     "ink": "Ink",
 }
 APPEARANCES = {"system": "Match my device", "light": "Light", "dark": "Dark"}
+# The editor's views. The last one used is saved per user (users.editor_mode).
+EDITOR_MODES = ["write", "split", "preview"]
+# How the home page can sort notes: key -> (label, SQL ORDER BY). The SQL is
+# fixed here, never taken from the user.
+SORTS = {
+    "updated": ("Last edited", "notes.updated_at DESC, notes.id DESC"),
+    "created": ("Date created", "notes.created_at DESC, notes.id DESC"),
+    "title": ("Title", "notes.title = '', notes.title COLLATE NOCASE, notes.id"),
+}
 
 # The profile picture choices. Nobody uploads a photo: an emoji is enough.
 AVATAR_CHOICES = ["😀", "😎", "🦊", "🐱", "🐼", "🐸", "🌸", "🌼",

@@ -22,7 +22,8 @@ def test_backlinks(client, post, add):
     post("/notes/new", {"title": "Groceries", "body": "[[budget]] again"})
     post("/notes/new", {"title": "Unrelated", "body": "nothing"})
     html = client.get(f"/notes/{target}").get_data(as_text=True)
-    section = html.split("Linked From")[1]
+    section = html.split("Linked From")[1].split("</details>")[0]
+    assert '<span class="count-badge">2</span>' in section
     assert ">Trip</a>" in section and ">Groceries</a>" in section
     assert "Unrelated" not in section
 

@@ -46,6 +46,12 @@ def logged_in_client(app):
     return client
 
 
+def titles_on(client, url):
+    """The note titles on a page, in order (the text inside each card's <h3>)."""
+    html = client.get(url).get_data(as_text=True)
+    return [part.split("</h3>")[0] for part in html.split('<h3 class="card-title">')[1:]]
+
+
 @pytest.fixture
 def app(tmp_path):
     # tmp_path is a fresh, empty folder for each test.

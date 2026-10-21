@@ -12,7 +12,10 @@ CREATE TABLE IF NOT EXISTS users (
   avatar        TEXT,                                -- an emoji like '🦊', or NULL for the first letter
   theme         TEXT    NOT NULL DEFAULT 'default',  -- one of THEMES in validation.py
   appearance    TEXT    NOT NULL DEFAULT 'system',   -- 'light', 'dark', or 'system' to follow the device
-  is_demo       INTEGER NOT NULL DEFAULT 0           -- 1 = the shared demo account (see demo.py)
+  is_demo       INTEGER NOT NULL DEFAULT 0,          -- 1 = the shared demo account (see demo.py)
+  onboarded     INTEGER NOT NULL DEFAULT 0,          -- 1 = has seen (or skipped) the welcome tour
+  show_greeting INTEGER NOT NULL DEFAULT 1,          -- 0 = no "Good morning" on the home page
+  editor_mode   TEXT    NOT NULL DEFAULT 'write'     -- the editor's last view: one of EDITOR_MODES
 );
 
 -- Every note belongs to one user, through user_id.
@@ -26,7 +29,8 @@ CREATE TABLE IF NOT EXISTS notes (
   archived   INTEGER NOT NULL DEFAULT 0,
   deleted_at TEXT,                                   -- set when moved to the Trash; NULL = not in the Trash
   created_at TEXT    NOT NULL,                       -- 'YYYY-MM-DD HH:MM:SS', set by notes.py
-  updated_at TEXT    NOT NULL
+  updated_at TEXT    NOT NULL,
+  opened_at  TEXT                                    -- last time the editor opened it ("Jump back in"); NULL = never
 );
 -- The home page asks for "this user's notes, not in the Trash, pinned first,
 -- newest first" on every visit. An index lets SQLite jump straight to them.

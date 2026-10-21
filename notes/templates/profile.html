@@ -84,6 +84,22 @@
     {% endif %}
   </section>
 
+  <section class="card" id="preferences">
+    <h2>Preferences</h2>
+    <form method="post" action="{{ url_for('profile.change_preferences') }}">
+      {{ ui.csrf() }}
+      <label class="switch-row">
+        <input type="checkbox" name="show_greeting" value="1" {% if g.user.show_greeting %}checked{% endif %}>
+        <span>Show a greeting on the home page <span class="hint">(like “Good morning, {{ g.user.display_name or g.user.username }}”)</span></span>
+      </label>
+      <button class="btn btn-primary" type="submit">Save Preferences</button>
+    </form>
+    <form class="inline-form" method="post" action="{{ url_for('notes.welcome_again') }}">
+      {{ ui.csrf() }}
+      <button class="btn btn-ghost btn-small" type="submit">Show the Welcome Tour Again</button>
+    </form>
+  </section>
+
   <section class="card" id="theme">
     <h2>Theme</h2>
     <p class="hint">A theme colors the buttons, links and highlights. Your logo and note colors stay the same.</p>
