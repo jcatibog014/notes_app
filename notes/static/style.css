@@ -164,6 +164,10 @@
 
 * { box-sizing: border-box; }
 
+/* The hidden attribute must win, even over classes like .btn that set
+   display (otherwise app.js can't hide a button). */
+[hidden] { display: none !important; }
+
 body {
   margin: 0;
   min-height: 100vh;
@@ -534,7 +538,14 @@ mark { padding: 0 2px; border-radius: 4px; background: var(--mark); color: inher
 
 .progress { display: flex; align-items: center; gap: 8px; font-size: 0.78rem; color: var(--muted); }
 .progress-bar { flex: 1; height: 6px; overflow: hidden; border-radius: 99px; background: color-mix(in srgb, var(--text) 10%, transparent); }
-.progress-bar span { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--accent), var(--accent-2)); }
+.progress-bar span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--accent), var(--accent-2));
+  transition: width 0.35s ease;  /* ticking a box slides the bar along */
+}
+.progress.is-complete .progress-bar span { background: linear-gradient(90deg, #2f9e57, #12a594); }
 
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .chip {
@@ -656,10 +667,33 @@ mark { padding: 0 2px; border-radius: 4px; background: var(--mark); color: inher
   backdrop-filter: blur(12px);
   box-shadow: var(--shadow-small);
 }
-.save-status { color: var(--muted); font-size: 0.85rem; }
-.save-status.is-saving::before { content: "● "; color: var(--sun); }
-.save-status.is-saved::before { content: "✓ "; color: #2f9e57; }
-.save-status.is-error { color: var(--danger); }
+/* The save status: a quiet timestamp most of the time. A pulsing dot while
+   saving, a check when saved, red with a Retry button when it failed. */
+.save-status { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); font-size: 0.85rem; }
+.save-status.is-saving .save-text::before {
+  content: "";
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 7px;
+  border-radius: 50%;
+  background: var(--sun);
+  animation: blink 1s ease-in-out infinite;
+}
+.save-status.is-saved .save-text::before { content: "✓ "; color: #2f9e57; font-weight: 700; }
+.save-status.is-error { color: var(--danger); font-weight: 500; }
+.save-status.pulse { animation: pulse 0.5s ease-out; }
+.save-retry {
+  padding: 3px 10px;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--danger);
+  font: 600 0.8rem var(--font);
+  cursor: pointer;
+}
+@keyframes blink { 50% { opacity: 0.3; } }
+@keyframes pulse { 40% { transform: scale(1.08); } }
 .bar-actions { display: flex; align-items: center; gap: 4px; margin-left: auto; }
 
 .mode-toggle {
@@ -1048,6 +1082,313 @@ mark { padding: 0 2px; border-radius: 4px; background: var(--mark); color: inher
 .error-card { margin-top: 12vh; }
 
 /* ==========================================================================
+   Finding your way: filter chips, "Jump back in", tips, the tour
+   ========================================================================== */
+
+.filter-row { display: flex; flex-wrap: wrap; gap: 8px; margin: -8px 0 22px; }
+.chip-toggle {
+  --hue: var(--muted);
+  gap: 6px;
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--muted);
+  font: 600 0.8rem var(--font);
+  cursor: pointer;
+}
+.chip-toggle:hover { color: var(--text); filter: none; border-color: color-mix(in srgb, var(--accent) 40%, var(--border)); }
+.chip-toggle.is-on {
+  border-color: transparent;
+  background: color-mix(in srgb, var(--accent) 14%, var(--surface));
+  color: var(--accent-strong);
+}
+.chip.is-on { outline: 2px solid currentColor; outline-offset: 1px; }
+.swatch-dot.is-on { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 30%, transparent); }
+.swatch { text-decoration: none; }
+
+.did-you-mean {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  margin: -10px 0 20px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--sun) 18%, var(--surface));
+}
+
+.recent { max-width: 640px; margin: -14px auto 26px; }
+.recent .section-label { margin: 0 0 8px 2px; }
+.chip-note { padding: 6px 12px; font-size: 0.82rem; }
+
+.tips { display: grid; gap: 6px; margin: 4px 0 0; padding: 0; color: var(--muted); list-style: none; }
+.tips li::before { content: "🌼 "; }
+
+.tour { width: min(420px, calc(100vw - 32px)); text-align: center; }
+.tour-art { position: relative; display: grid; place-items: center; height: 96px; margin-bottom: 6px; }
+.tour-icon {
+  position: absolute;
+  right: calc(50% - 56px);
+  bottom: 4px;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  color: #fff;
+  box-shadow: var(--shadow);
+}
+.tour p:not(.eyebrow) { color: var(--muted); }
+.tour-dots { display: flex; justify-content: center; gap: 6px; margin-top: 14px; }
+.tour-dots span { width: 8px; height: 8px; border-radius: 50%; background: var(--border); transition: width 0.2s, background 0.2s; }
+.tour-dots span.is-on { width: 22px; border-radius: 99px; background: var(--accent); }
+.tour .sheet-actions { justify-content: center; }
+.tour [data-tour-skip] { margin-right: auto; }
+
+.sheet-filter {
+  width: 100%;
+  margin-bottom: 12px;
+  padding: 9px 14px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+}
+.shortcut-group {
+  margin: 14px 0 8px;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.more-shortcuts { margin-top: 14px; }
+.more-shortcuts summary { cursor: pointer; color: var(--accent-strong); font-weight: 600; font-size: 0.9rem; }
+.more-shortcuts .shortcut-list { margin-top: 10px; }
+
+/* ---------- Sidebar "More" ---------- */
+
+.side-more summary { list-style: none; cursor: pointer; }
+.side-more summary::-webkit-details-marker { display: none; }
+.side-more summary .icon:last-child { margin-left: auto; transition: transform 0.2s; }
+.side-more[open] summary .icon:last-child { transform: rotate(180deg); }
+.side-more .side-link:not(summary) { padding-left: 24px; }
+
+/* ---------- Select mode and the selection bar ---------- */
+
+.card-select { display: none; position: absolute; top: 10px; left: 10px; z-index: 3; }
+.card-select input { width: 22px; height: 22px; margin: 0; accent-color: var(--accent); cursor: pointer; }
+.selecting .card-select { display: block; }
+.selecting .note-card { padding-top: 40px; }
+.selecting .card-actions { display: none; }
+.note-card:has(.card-select input:checked) {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.bulk-bar {
+  position: fixed;
+  bottom: 22px;
+  left: 50%;
+  z-index: 40;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  max-width: calc(100vw - 32px);
+  padding: 8px 10px 8px 18px;
+  border: 1px solid var(--border);
+  border-radius: 22px;
+  background: var(--surface);
+  box-shadow: var(--shadow-big);
+  transform: translateX(-50%);
+}
+.bulk-bar[hidden] { display: none; }
+.bulk-count { margin-right: 6px; font-weight: 700; }
+.bulk-tag { display: inline-flex; gap: 4px; }
+.bulk-tag input {
+  width: 90px;
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+}
+
+/* ---------- Trash, tags review, profile preferences ---------- */
+
+.purge-in.is-soon { color: var(--danger); font-weight: 600; }
+
+.view-switch { display: inline-flex; gap: 4px; margin-top: 12px; padding: 3px; border-radius: 999px; background: var(--surface-2); }
+.view-switch a {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+.view-switch a[aria-current] { background: var(--surface); color: var(--text); box-shadow: var(--shadow-small); }
+
+.review {
+  flex-basis: 100%;
+  margin-top: 4px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  background: var(--surface-2);
+}
+.review p { margin: 0 0 8px; }
+.review-warning { padding: 10px 12px; border-radius: 10px; background: color-mix(in srgb, var(--sun) 25%, var(--surface)); }
+.review-notes { margin: 0 0 12px; padding-left: 1.2em; }
+.review-actions { display: flex; justify-content: flex-end; gap: 8px; }
+
+.switch-row { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 16px; cursor: pointer; }
+.switch-row input { width: 18px; height: 18px; margin: 2px 0 0; accent-color: var(--accent); }
+.inline-form { margin-top: 12px; }
+
+.menu-item.is-on { color: var(--accent-strong); font-weight: 600; }
+.menu-hint { margin: 6px 12px 4px; }
+
+/* ---------- Editor extras ---------- */
+
+.tags-manage { margin-left: auto; font-size: 0.8rem; font-weight: 600; text-decoration: none; }
+.tags-manage:hover { text-decoration: underline; }
+/* Tags that come from #tags in the text: dotted, and removed by editing the text. */
+.chip-derived { border: 1px dashed currentColor; background: transparent; }
+
+/* The [[ and # suggestions, and the tag box's suggestions. */
+.suggest {
+  position: absolute;
+  z-index: 30;
+  min-width: 220px;
+  max-width: min(340px, calc(100vw - 32px));
+  max-height: 260px;
+  margin: 0;
+  padding: 6px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: var(--shadow-big);
+  list-style: none;
+}
+.suggest li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  overflow: hidden;
+  border-radius: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.suggest li[aria-selected="true"] { background: color-mix(in srgb, var(--accent) 14%, var(--surface)); color: var(--accent-strong); }
+.suggest .suggest-new { color: var(--muted); }
+.suggest-head { padding: 4px 10px 6px; color: var(--muted); font-size: 0.72rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
+.suggest mark { padding: 0; background: none; color: inherit; font-weight: 700; }
+
+.backlinks summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 12px;
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.backlinks:not([open]) summary { margin-bottom: 0; }
+.count-badge {
+  min-width: 20px;
+  padding: 0 6px;
+  border-radius: 99px;
+  background: color-mix(in srgb, var(--accent) 16%, var(--surface));
+  color: var(--accent-strong);
+  font-size: 0.75rem;
+  text-align: center;
+}
+
+/* Focus mode: only the note. */
+.focus-mode .sidebar, .focus-mode .topbar, .focus-mode .toolbar, .focus-mode .tags-field,
+.focus-mode .bottom-nav, .focus-mode .backlinks { display: none; }
+.focus-mode .shell { grid-template-columns: minmax(0, 1fr); }
+.focus-mode .editor-bar { top: 12px; margin-top: 12px; }
+.focus-mode .sheet-paper { border-color: transparent; background: transparent; box-shadow: none; }
+[data-focus-mode][aria-pressed="true"] { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent-strong); }
+
+/* A checklist that reaches 100%: the bar glows, and a few petals fly. */
+.celebrate { animation: celebrate 0.7s ease-out; }
+@keyframes celebrate {
+  30% { transform: scale(1.04); box-shadow: 0 0 0 6px color-mix(in srgb, #2f9e57 25%, transparent); }
+}
+.confetti { position: fixed; z-index: 60; pointer-events: none; }
+.confetti span {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  animation: petal 0.9s ease-out forwards;
+}
+@keyframes petal {
+  to { opacity: 0; transform: translate(var(--x), var(--y)) rotate(200deg) scale(0.6); }
+}
+
+/* ---------- Snackbar (the Undo toast) ---------- */
+
+.toast-snackbar { padding-right: 8px; }
+.toast-close {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: rgb(255 255 255 / 0.7);
+  cursor: pointer;
+}
+.toast-close:hover { background: rgb(255 255 255 / 0.12); color: #fff; }
+
+/* ---------- Keyboard and accessibility ---------- */
+
+/* The card's link covers the card, so its focus ring outlines the card. */
+.card-link:focus-visible { outline: 3px solid color-mix(in srgb, var(--accent) 60%, transparent); outline-offset: 3px; }
+
+/* Sheets dragged down on a phone follow the finger (app.js). */
+.sheet.is-dragging { transition: none; }
+
+/* Touch screens: every button at least 44px, the size of a fingertip. */
+@media (pointer: coarse) {
+  .icon-btn, .card-actions .icon-btn { width: 44px; height: 44px; }
+  .checklist input { width: 22px; height: 22px; }
+  .checklist label { min-height: 32px; align-items: center; }
+  .mode-toggle button { min-height: 40px; }
+  .chip-toggle, .toolbar button { min-height: 40px; }
+  .toast-close { width: 44px; height: 44px; }
+  .card-select input { width: 26px; height: 26px; }
+}
+
+/* People who ask their device for less motion get (almost) none. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .note-card:hover { transform: none; }
+}
+
+/* ==========================================================================
    Small screens
    ========================================================================== */
 
@@ -1106,6 +1447,11 @@ mark { padding: 0 2px; border-radius: 4px; background: var(--mark); color: inher
     box-shadow: 0 8px 20px color-mix(in srgb, var(--accent) 40%, transparent);
   }
   .toasts { bottom: calc(88px + env(safe-area-inset-bottom)); }
+  .bulk-bar { bottom: calc(84px + env(safe-area-inset-bottom)); }
+  /* While typing, the keyboard needs the room: hide the bottom bar. */
+  body:has(textarea:focus, input[type="text"]:focus, input[type="search"]:focus) .bottom-nav { display: none; }
+  body:has(textarea:focus, input[type="text"]:focus, input[type="search"]:focus) .toasts { bottom: 16px; }
+  .tags-manage { display: none; }
 
   /* Sheets slide up from the bottom, like on a phone app. */
   .sheet {
