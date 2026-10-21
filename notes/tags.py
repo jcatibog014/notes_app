@@ -94,12 +94,21 @@ def rewrite_hashtags(db, tag_id, old, new=None):
 
 
 @bp.get("/tags")
-def index(rename_id=None, rename_value="", error=None):
+def index(rename_id=None, rename_value="", error=None, review=None):
     html = render_template(
         "tags.html", tags=tag_counts(get_db(), g.user["id"]),
-        rename_id=rename_id, rename_value=rename_value, error=error,
+        rename_id=rename_id, rename_value=rename_value, error=error, review=review,
     )
     return html, 400 if error else 200
+
+
+def notes_with_tag(db, tag_id):
+    """The notes (not in the Trash) that have this tag, newest first."""
+    return db.execute(
+        "SELECT notes.id, notes.title FROM notes JOIN note_tags ON note_tags.note_id = notes.id"
+        " WHERE note_tags.tag_id = ? AND notes.deleted_at IS NULL ORDER BY notes.updated_at DESC",
+        (tag_id,),
+    ).fetchall()
 
 
 @bp.post("/tags/<int:tag_id>/rename")
@@ -117,8 +126,16 @@ def rename(tag_id):
 
     db = get_db()
     user_id = g.user["id"]
-    rewrite_hashtags(db, tag_id, tag["name"], name)
     existing = db.execute("SELECT id FROM tags WHERE user_id = ? AND name = ?", (user_id, name)).fetchone()
+    if not request.form.get("confirm"):
+        # Step 1: show what will change, and ask. Step 2 (confirm=1) does it.
+        review = {
+            "tag": tag, "name": name, "notes": notes_with_tag(db, tag_id),
+            "merge_count": len(notes_with_tag(db, existing["id"])) if existing else None,
+        }
+        return index(rename_id=tag_id, rename_value=name, review=review)
+
+    rewrite_hashtags(db, tag_id, tag["name"], name)
     if existing:
         # Renaming onto a tag that exists merges the two: every note with the
         # old tag gets the other one (OR IGNORE skips notes that had both).

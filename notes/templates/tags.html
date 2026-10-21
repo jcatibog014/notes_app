@@ -31,10 +31,37 @@
           {% if has_error %}<p class="error" id="rename-error">{{ error }}</p>{% endif %}
         </form>
         <form method="post" action="{{ url_for('tags.delete', tag_id=tag.id) }}"
-              data-confirm="Delete #{{ tag.name }}? Its notes stay, without the tag.">
+              data-confirm="Delete #{{ tag.name }}? {{ tag.count }} {{ 'note loses' if tag.count == 1 else 'notes lose' }} this tag, and “#{{ tag.name }}” in their text becomes plain “{{ tag.name }}”. The notes themselves stay.">
           {{ ui.csrf() }}
           <button class="icon-btn danger" type="submit" title="Delete tag" aria-label="Delete #{{ tag.name }}">{{ ui.icon('trash') }}</button>
         </form>
+
+        {% if review and review.tag.id == tag.id %}
+          {# Step 1 of a rename: show what will change before doing it. #}
+          <div class="review" role="alert">
+            {% if review.merge_count is not none %}
+              <p class="review-warning"><strong>This merges two tags.</strong>
+                You already have #{{ review.name }} ({{ review.merge_count }} {{ 'note' if review.merge_count == 1 else 'notes' }}).
+                #{{ tag.name }} will join it and disappear. This can't be undone.</p>
+            {% else %}
+              <p>Rename #{{ tag.name }} to <strong>#{{ review.name }}</strong>?</p>
+            {% endif %}
+            {% if review.notes %}
+              <p class="hint">{{ review.notes|length }} {{ 'note changes' if review.notes|length == 1 else 'notes change' }}, including any “#{{ tag.name }}” in their text:</p>
+              <ul class="review-notes">
+                {% for note in review.notes[:8] %}<li><a href="{{ url_for('notes.edit', note_id=note.id) }}">{{ note.title or 'Untitled' }}</a></li>{% endfor %}
+                {% if review.notes|length > 8 %}<li class="hint">and {{ review.notes|length - 8 }} more</li>{% endif %}
+              </ul>
+            {% endif %}
+            <form class="review-actions" method="post" action="{{ url_for('tags.rename', tag_id=tag.id) }}">
+              {{ ui.csrf() }}
+              <input type="hidden" name="name" value="{{ review.name }}">
+              <input type="hidden" name="confirm" value="1">
+              <a class="btn btn-ghost btn-small" href="{{ url_for('tags.index') }}">Cancel</a>
+              <button class="btn btn-primary btn-small" type="submit">{{ 'Merge Tags' if review.merge_count is not none else 'Rename' }}</button>
+            </form>
+          </div>
+        {% endif %}
       </li>
     {% endfor %}
   </ul>
